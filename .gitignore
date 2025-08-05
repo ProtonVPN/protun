@@ -4,3 +4,6 @@ Cargo.lock
 **/*.rs.bk
 *.pdb
 src/uniffi/
+.cargo/
+.vscode/
+out/
