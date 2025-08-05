@@ -19,5 +19,5 @@ pub mod connection;
 pub mod state;
 pub mod type_conversions;
 
-#[cfg(any(feature = "android", feature = "linux", feature = "apple"))]
+#[cfg(feature = "unix")]
 pub mod connection_unix;
