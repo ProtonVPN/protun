@@ -15,11 +15,9 @@
 // You should have received a copy of the GNU General Public License
 // along with ProtonVPN.  If not, see <https://www.gnu.org/licenses/>.
 
-#[cfg(feature = "uniffi")]
-uniffi::setup_scaffolding!();
+#[cfg(feature = "unix")]
+pub(crate) mod factory_unix;
 
-#[cfg(feature = "local-agent")]
-pub(crate) mod local_agent;
-
-pub mod api;
-pub(crate) mod connection;
+pub(crate) mod pvpn_connection;
+pub(crate) mod pvpn_state_handler;
+pub(crate) mod streams;

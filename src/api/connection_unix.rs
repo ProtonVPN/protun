@@ -15,7 +15,10 @@
 // You should have received a copy of the GNU General Public License
 // along with ProtonVPN.  If not, see <https://www.gnu.org/licenses/>.
 
-use crate::api::connection::{Connection, InitialConnectionConfig, StateChangedCallback};
+use crate::{
+    api::connection::{Connection, InitialConnectionConfig, StateChangedCallback},
+    connection::factory_unix::create_unix_streams,
+};
 
 #[cfg_attr(feature = "uniffi", uniffi::export)]
 impl Connection {
@@ -29,7 +32,11 @@ impl Connection {
         state_change_callback: Box<dyn StateChangedCallback>,
         socket_fd_available_callback: Option<Box<dyn OnSocketFdAvailableCallback>>,
     ) -> Self {
-        todo!()
+        Self::connect_internal(
+            move || create_unix_streams(tun_fd, socket_fd_available_callback),
+            state_change_callback.into(),
+            config,
+        )
     }
 
     /// Notifies library that file descriptor for tun device has changed.

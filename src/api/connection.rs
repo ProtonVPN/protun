@@ -15,12 +15,20 @@
 // You should have received a copy of the GNU General Public License
 // along with ProtonVPN.  If not, see <https://www.gnu.org/licenses/>.
 
-#[cfg(feature = "local-agent")]
-use local_agent_rs::AgentFeatures;
+use std::sync::Arc;
 
-use crate::{
-    api::state::State,
+#[cfg(feature = "local-agent")]
+use {
+    local_agent_rs::AgentFeatures,
+    crate::local_agent::local_agent::{start_local_agent_task, LocalAgentMessage},
 };
+
+#[cfg(not(feature = "local-agent"))]
+use crate::connection::pvpn_state_handler::PvpnToApiStateHandler;
+
+use crate::api::state::State;
+use crate::connection::pvpn_connection::{start_pvpn_connection, PvpnMessage};
+use crate::connection::streams::Streams;
 
 pub const CLIENT_PRIV_KEY_SIZE_BYTES: usize = 32;
 pub const PEER_PUB_KEY_SIZE_BYTES: usize = 32;
@@ -29,10 +37,13 @@ pub const PEER_PUB_KEY_SIZE_BYTES: usize = 32;
 pub struct WgClientPrivateKey(pub [u8; CLIENT_PRIV_KEY_SIZE_BYTES]);
 
 /// [PEER_PUB_KEY_SIZE_BYTES] bytes long peer public key.
+#[derive(Clone)]
 pub struct WgPeerPublicKey(pub [u8; PEER_PUB_KEY_SIZE_BYTES]);
 
 /// Represents an active VPN connection.
-/// Platform-specific constructor (::*_connect) is defined in dedicated module (see e.g. [crate::api::connection_unix])
+/// Platform-specific constructor (::*_connect) is defined in dedicated module
+/// (see e.g. [crate::api::connection_unix]). Helper constructor capturing common logic
+/// ([Connection::connect_internal]) is added for convenience.
 ///
 /// Connection will make a best effort to maintain VPN connection cycling through a set of candidate peers
 /// (along with ports and protocols) based on their priority and availability in current network conditions.
@@ -48,7 +59,41 @@ pub struct WgPeerPublicKey(pub [u8; PEER_PUB_KEY_SIZE_BYTES]);
 /// 
 /// In non-local-agent mode, Connection will enter connected state immediately after establishing VPN connection.
 #[cfg_attr(feature = "uniffi", derive(uniffi::Object))]
-pub struct Connection;
+pub struct Connection {
+    pub(crate) send_pvpn_message: Box<dyn Fn(PvpnMessage) -> () + Send + Sync>,
+    #[cfg(feature = "local-agent")]
+    pub(crate) send_local_agent_message: Box<dyn Fn(LocalAgentMessage) -> () + Send + Sync>,
+}
+
+impl Connection {
+
+    /// Helper constructor to be used by platform-specific ones.
+    pub(crate) fn connect_internal(
+        create_streams: impl FnOnce() -> Box<dyn Streams> + Send + 'static,
+        state_change_callback: Arc<dyn StateChangedCallback>,
+        config: InitialConnectionConfig,
+    ) -> Self {
+        #[cfg(not(feature = "local-agent"))]
+        // When local agent is not enabled just translate pvpn state to api state.
+        let pvpn_state_change_callback = Box::new(PvpnToApiStateHandler { state_change_callback });
+
+        // When local agent is enabled, local agent will be handling pvpn state changes.
+        #[cfg(feature = "local-agent")]
+        let (pvpn_state_change_callback, send_local_agent_message) =
+            start_local_agent_task(config.local_agent.clone(), state_change_callback);
+
+        let send_pvpn_message = start_pvpn_connection(
+            create_streams,
+            pvpn_state_change_callback,
+            config,
+        );
+        Self {
+            send_pvpn_message,
+            #[cfg(feature = "local-agent")]
+            send_local_agent_message,
+        }
+    }
+}
 
 #[cfg_attr(feature = "uniffi", uniffi::export)]
 impl Connection {
@@ -57,24 +102,28 @@ impl Connection {
     /// Method call might not necessarily result in new connection if suitable peer is already connected.
     #[cfg_attr(feature = "uniffi", uniffi::method)]
     pub fn update_peers(&self, peers: Vec<PeerInfo>) {
-        todo!()
+        (self.send_pvpn_message)(PvpnMessage::SetPeers(peers));
     }
 
     /// Updates WireGuard private key.
     #[cfg_attr(feature = "uniffi", uniffi::method)]
     pub fn update_wg_private_key(&self, info: PrivateKeyUpdateInfo) {
-        todo!()
+        (self.send_pvpn_message)(PvpnMessage::UpdateWgPrivateKey(info.wg_private_key.into()));
+        #[cfg(feature = "local-agent")]
+        if let Some(local_agent_client_cert) = info.local_agent_client_cert {
+            (self.send_local_agent_message)(LocalAgentMessage::UpdateCert(local_agent_client_cert));
+        }
     }
 
     #[cfg_attr(feature = "uniffi", uniffi::method)]
     pub fn on_set_network_available(&self, is_network_available: bool) {
-        todo!()
+        (self.send_pvpn_message)(PvpnMessage::SetIsNetworkAvailable(is_network_available));
     }
 
     /// Disconnects. Connection should not be used after this.
     #[cfg_attr(feature = "uniffi", uniffi::method)]
     pub fn disconnect(&self) {
-        todo!()
+        (self.send_pvpn_message)(PvpnMessage::Disconnect);
     }
 }
 
@@ -87,19 +136,19 @@ impl Connection {
     /// Some features, like AgentFeatures::Bouncing will have values specific to the peer and defined in [PeerLocalAgentInfo].
     #[cfg_attr(feature = "uniffi", uniffi::method)]
     pub fn update_base_features(&self, features: AgentFeatures) {
-        todo!()
+        (self.send_local_agent_message)(LocalAgentMessage::UpdateFeatures(features));
     }
 
     /// Updates local agent client certificate.
     #[cfg_attr(feature = "uniffi", uniffi::method)]
     pub fn update_local_agent_client_cert(&self, cert: LocalAgentClientCert) {
-        todo!()
+        (self.send_local_agent_message)(LocalAgentMessage::UpdateCert(cert));
     }
 
     /// Requests statistics (NetShield) from local agent.
     #[cfg_attr(feature = "uniffi", uniffi::method)]
     pub fn request_local_agent_stats(&self) {
-        todo!()
+        (self.send_local_agent_message)(LocalAgentMessage::RequestStats);
     }
 }
 
@@ -114,6 +163,7 @@ pub struct InitialConnectionConfig {
 
 #[cfg_attr(feature = "uniffi", derive(uniffi::Record))]
 #[cfg(feature = "local-agent")]
+#[derive(Clone)]
 pub struct InitialLocalAgentConfig {
     pub client_cert: LocalAgentClientCert,
     pub base_features: AgentFeatures,
@@ -150,6 +200,7 @@ pub struct PeerInfo {
 
 #[cfg(feature = "local-agent")]
 #[cfg_attr(all(feature = "uniffi", feature = "local-agent"), derive(uniffi::Record))]
+#[derive(Debug, Clone)]
 pub struct PeerLocalAgentInfo {
     pub bouncing: Option<String>,
     pub domain: String,
