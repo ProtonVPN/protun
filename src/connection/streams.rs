@@ -58,6 +58,8 @@ pub(crate) enum StreamResult {
     Ok {
         /// Number of bytes read/written.
         bytes_count: usize,
+        /// Whether the operation ended with WouldBlock.
+        would_block: bool,
         /// Stream need to become writable to send more data.
         pending_write: bool,
     },

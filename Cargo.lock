@@ -1122,6 +1122,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "78bed444cc8a2160f01cbcf811ef18cac863ad68ae8ca62092e8db51d51c761c"
 dependencies = [
  "libc",
+ "log",
  "wasi 0.11.1+wasi-snapshot-preview1",
  "windows-sys 0.59.0",
 ]
@@ -1330,8 +1331,12 @@ dependencies = [
 name = "protun"
 version = "0.1.0"
 dependencies = [
+ "libc",
  "local-agent-rs",
+ "log",
+ "mio",
  "pvpnclient",
+ "socket2",
  "uniffi",
 ]
 

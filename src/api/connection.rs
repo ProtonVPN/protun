@@ -28,7 +28,7 @@ use crate::connection::pvpn_state_handler::PvpnToApiStateHandler;
 
 use crate::api::state::State;
 use crate::connection::pvpn_connection::{start_pvpn_connection, PvpnMessage};
-use crate::connection::streams::Streams;
+use crate::connection::streams::{PollWaker, Streams};
 
 pub const CLIENT_PRIV_KEY_SIZE_BYTES: usize = 32;
 pub const PEER_PUB_KEY_SIZE_BYTES: usize = 32;
@@ -69,6 +69,7 @@ impl Connection {
 
     /// Helper constructor to be used by platform-specific ones.
     pub(crate) fn connect_internal(
+        poll_waker: Box<dyn PollWaker + Send + Sync>,
         create_streams: impl FnOnce() -> Box<dyn Streams> + Send + 'static,
         state_change_callback: Arc<dyn StateChangedCallback>,
         config: InitialConnectionConfig,
@@ -83,6 +84,7 @@ impl Connection {
             start_local_agent_task(config.local_agent.clone(), state_change_callback);
 
         let send_pvpn_message = start_pvpn_connection(
+            poll_waker,
             create_streams,
             pvpn_state_change_callback,
             config,

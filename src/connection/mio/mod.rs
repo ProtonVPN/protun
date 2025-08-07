@@ -15,17 +15,13 @@
 // You should have received a copy of the GNU General Public License
 // along with ProtonVPN.  If not, see <https://www.gnu.org/licenses/>.
 
-use crate::{api::connection_unix::OnSocketFdAvailableCallback, connection::streams::{Stream, Streams}};
+#[cfg(feature = "unix")]
+pub(crate) mod socket_factory_unix;
 
-pub(crate) fn create_unix_tun(
-    tun_fd: i32,
-) -> Box<dyn Stream> {
-    todo!()
-}
+#[cfg(feature = "unix")]
+pub(crate) mod tun_unix;
 
-pub(crate) fn create_unix_streams(
-    tun_fd: i32,
-    socket_fd_available_callback: Option<Box<dyn OnSocketFdAvailableCallback>>,
-) -> Box<dyn Streams> {
-    todo!()
-}
+pub(crate) mod streams;
+
+mod tcp;
+mod udp;

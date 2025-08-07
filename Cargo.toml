@@ -7,15 +7,19 @@ edition = "2024"
 crate-type = ["cdylib", "rlib"]
 
 [dependencies]
+libc = { version = "0.2.174", optional = true }
 local-agent-rs = { path = "local-agent-rs/local_agent_rs", optional = true }
+log = "0.4.27"
+mio = { version = "1.0.4", features = ["net", "os-poll", "os-ext"] }
 pvpnclient = { path = "libpvpnclient" }
+socket2 = { version = "0.5.10", optional = true }
 uniffi = { version = "0.29.2", features = ["cli"], optional = true }
 
 [build-dependencies]
 uniffi = { version = "0.29.2", features = ["build"], optional = true }
 
 [features]
-unix = []
+unix = ["dep:libc", "dep:socket2"]
 android = ["unix"]
 apple = ["unix"]
 linux = ["unix"]

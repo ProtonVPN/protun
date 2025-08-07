@@ -15,6 +15,8 @@
 // You should have received a copy of the GNU General Public License
 // along with ProtonVPN.  If not, see <https://www.gnu.org/licenses/>.
 
+use std::io;
+
 #[cfg(feature = "local-agent")]
 use crate::api::connection::PeerLocalAgentInfo;
 
@@ -23,7 +25,7 @@ use crate::{
         connection::{InitialConnectionConfig, PeerInfo, WgClientPrivateKey},
         state::{PeerConnectionInfo, VpnConnectingError},
     },
-    connection::{pvpn_state_handler::PvpnConnectionStateHandler, streams::Streams},
+    connection::{pvpn_state_handler::PvpnConnectionStateHandler, streams::{PollWaker, Streams}},
 };
 
 /// State of the pvpn connection.
@@ -54,6 +56,7 @@ pub(crate) enum PvpnMessage {
 /// [pvpn_state_change_callback] callback that will receive pvpn connection state changes.
 /// [config] initial connection configuration.
 pub(crate) fn start_pvpn_connection(
+    poll_waker: Box<dyn PollWaker + Send + Sync>,
     create_streams: impl FnOnce () -> Box<dyn Streams> + Send + 'static,
     pvpn_state_change_callback: Box<dyn PvpnConnectionStateHandler + Send + 'static>,
     config: InitialConnectionConfig,

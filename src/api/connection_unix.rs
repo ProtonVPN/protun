@@ -17,7 +17,7 @@
 
 use crate::{
     api::connection::{Connection, InitialConnectionConfig, StateChangedCallback},
-    connection::factory_unix::create_unix_streams,
+    connection::mio::{socket_factory_unix::SocketFactoryUnix, streams::MioStreams, tun_unix::TunStreamUnix},
 };
 
 #[cfg_attr(feature = "uniffi", uniffi::export)]
@@ -32,8 +32,15 @@ impl Connection {
         state_change_callback: Box<dyn StateChangedCallback>,
         socket_fd_available_callback: Option<Box<dyn OnSocketFdAvailableCallback>>,
     ) -> Self {
+        let socket_factory = Box::new(SocketFactoryUnix::new(socket_fd_available_callback));
+        let (poll, waker) = MioStreams::create_mio_poll_with_waker().expect("Failed to create mio poll");
         Self::connect_internal(
-            move || create_unix_streams(tun_fd, socket_fd_available_callback),
+            Box::new(waker),
+            move || {
+                let tun_stream = Box::new(TunStreamUnix::new(tun_fd));
+                let streams = MioStreams::new(tun_stream, socket_factory, poll).expect("Failed to create mio streams");
+                Box::new(streams)
+            },
             state_change_callback.into(),
             config,
         )
