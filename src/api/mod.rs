@@ -16,6 +16,7 @@
 // along with ProtonVPN.  If not, see <https://www.gnu.org/licenses/>.
 
 pub mod connection;
+pub mod logger;
 pub mod state;
 pub mod type_conversions;
 

@@ -58,6 +58,8 @@ pub struct WgPeerPublicKey(pub [u8; PEER_PUB_KEY_SIZE_BYTES]);
 /// be established before Connection enters connected state.
 /// 
 /// In non-local-agent mode, Connection will enter connected state immediately after establishing VPN connection.
+/// 
+/// For initializing logging, see [crate::api::logger::init_logger].
 #[cfg_attr(feature = "uniffi", derive(uniffi::Object))]
 pub struct Connection {
     pub(crate) send_pvpn_message: Box<dyn Fn(PvpnMessage) -> () + Send + Sync>,
