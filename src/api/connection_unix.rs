@@ -17,7 +17,7 @@
 
 use crate::{
     api::connection::{Connection, InitialConnectionConfig, StateChangedCallback},
-    connection::mio::{socket_factory_unix::SocketFactoryUnix, streams::MioStreams, tun_unix::TunStreamUnix},
+    connection::{mio::{socket_factory_unix::SocketFactoryUnix, streams::MioStreams, tun_unix::TunStreamUnix}, pvpn_client::PvpnClientImpl, pvpn_connection::PvpnMessage},
 };
 
 #[cfg_attr(feature = "uniffi", uniffi::export)]
@@ -41,6 +41,7 @@ impl Connection {
                 let streams = MioStreams::new(tun_stream, socket_factory, poll).expect("Failed to create mio streams");
                 Box::new(streams)
             },
+            move || Box::new(PvpnClientImpl::new()),
             state_change_callback.into(),
             config,
         )

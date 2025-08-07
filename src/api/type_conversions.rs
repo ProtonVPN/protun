@@ -15,6 +15,8 @@
 // You should have received a copy of the GNU General Public License
 // along with ProtonVPN.  If not, see <https://www.gnu.org/licenses/>.
 
+use pvpnclient::pvpnclient::{WireguardPrivateKey, WireguardPublicKey};
+
 use crate::api::connection::{WgPeerPublicKey, WgClientPrivateKey, CLIENT_PRIV_KEY_SIZE_BYTES, PEER_PUB_KEY_SIZE_BYTES};
 
 #[cfg(feature = "uniffi")]
@@ -60,5 +62,17 @@ impl TryFrom<Vec<u8>> for WgPeerPublicKey {
 impl From<WgPeerPublicKey> for Vec<u8> {
     fn from(value: WgPeerPublicKey) -> Self {
         value.0.to_vec()
+    }
+}
+
+impl From<WgClientPrivateKey> for WireguardPrivateKey {
+    fn from(value: WgClientPrivateKey) -> Self {
+        WireguardPrivateKey { key: value.0 }
+    }
+}
+
+impl From<WgPeerPublicKey> for WireguardPublicKey {
+    fn from(value: WgPeerPublicKey) -> Self {
+        WireguardPublicKey { key: value.0 }
     }
 }

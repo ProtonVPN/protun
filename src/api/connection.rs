@@ -26,7 +26,7 @@ use {
 #[cfg(not(feature = "local-agent"))]
 use crate::connection::pvpn_state_handler::PvpnToApiStateHandler;
 
-use crate::api::state::State;
+use crate::{api::state::State, connection::pvpn_client::PvpnClient};
 use crate::connection::pvpn_connection::{start_pvpn_connection, PvpnMessage};
 use crate::connection::streams::{PollWaker, Streams};
 
@@ -34,6 +34,7 @@ pub const CLIENT_PRIV_KEY_SIZE_BYTES: usize = 32;
 pub const PEER_PUB_KEY_SIZE_BYTES: usize = 32;
 
 /// [CLIENT_PRIV_KEY_SIZE_BYTES] bytes long client private key.
+#[derive(Clone)]
 pub struct WgClientPrivateKey(pub [u8; CLIENT_PRIV_KEY_SIZE_BYTES]);
 
 /// [PEER_PUB_KEY_SIZE_BYTES] bytes long peer public key.
@@ -73,6 +74,7 @@ impl Connection {
     pub(crate) fn connect_internal(
         poll_waker: Box<dyn PollWaker + Send + Sync>,
         create_streams: impl FnOnce() -> Box<dyn Streams> + Send + 'static,
+        create_client: impl FnOnce() -> Box<dyn PvpnClient> + Send + 'static,
         state_change_callback: Arc<dyn StateChangedCallback>,
         config: InitialConnectionConfig,
     ) -> Self {
@@ -88,6 +90,7 @@ impl Connection {
         let send_pvpn_message = start_pvpn_connection(
             poll_waker,
             create_streams,
+            create_client,
             pvpn_state_change_callback,
             config,
         );
@@ -204,7 +207,7 @@ pub struct PeerInfo {
 
 #[cfg(feature = "local-agent")]
 #[cfg_attr(all(feature = "uniffi", feature = "local-agent"), derive(uniffi::Record))]
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct PeerLocalAgentInfo {
     pub bouncing: Option<String>,
     pub domain: String,

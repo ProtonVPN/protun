@@ -16,6 +16,8 @@
 // along with ProtonVPN.  If not, see <https://www.gnu.org/licenses/>.
 
 pub(crate) mod mio;
+pub(crate) mod pvpn_client;
 pub(crate) mod pvpn_connection;
 pub(crate) mod pvpn_state_handler;
 pub(crate) mod streams;
+mod util;
