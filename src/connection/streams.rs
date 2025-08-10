@@ -19,6 +19,8 @@ use std::io;
 use std::net::SocketAddr;
 use pvpnclient::pvpnclient::{Deadline, SocketOption, StreamId};
 
+use crate::connection::CreateTunStream;
+
 /// Abstraction over a socket or tun device.
 pub(crate) trait Stream {
     fn read(&mut self, buf: &mut[u8]) -> StreamResult;
@@ -45,6 +47,9 @@ pub(crate) trait Streams {
 
     /// Set whether polling should wait for stream to become writable.
     fn set_poll_enable_wait_for_write(&mut self, stream_id: StreamId, wait_for_write: bool);
+
+    /// Update the tun stream.
+    fn update_tun(&mut self, create_tun_stream: CreateTunStream);
 }
 
 /// A trait to interrupt a [Streams::poll] call.

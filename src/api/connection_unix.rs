@@ -50,7 +50,7 @@ impl Connection {
     /// Notifies library that file descriptor for tun device has changed.
     #[cfg_attr(feature = "uniffi", uniffi::method)]
     pub fn update_unix_tun(&self, tun_fd: i32) {
-        todo!()
+        (self.send_pvpn_message)(PvpnMessage::UpdateTun(Box::new(move || Box::new(TunStreamUnix::new(tun_fd)))));
     }
 }
 

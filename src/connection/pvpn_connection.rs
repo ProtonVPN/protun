@@ -27,7 +27,7 @@ use crate::{
         connection::{InitialConnectionConfig, PeerInfo, WgClientPrivateKey},
         state::{PeerConnectionInfo, Protocol, VpnConnectingError},
     },
-    connection::{pvpn_client::{PvpnClient, PvpnClientImpl}, pvpn_state_handler::PvpnConnectionStateHandler, streams::{PollResult, PollWaker, StreamResult, Streams}, util::now},
+    connection::{pvpn_client::{PvpnClient, PvpnClientImpl}, pvpn_state_handler::PvpnConnectionStateHandler, streams::{PollResult, PollWaker, StreamResult, Streams}, util::now, CreateTunStream},
 };
 
 /// State of the pvpn connection.
@@ -48,6 +48,7 @@ pub(crate) enum PvpnMessage {
     Disconnect,
     SetPeers(Vec<PeerInfo>),
     SetIsNetworkAvailable(bool),
+    UpdateTun(CreateTunStream),
     UpdateWgPrivateKey(WgClientPrivateKey),
 }
 
@@ -151,6 +152,9 @@ impl PvpnConnection {
                 },
                 PvpnMessage::SetIsNetworkAvailable(network_available) => {
                     self.set_network_available(network_available);
+                },
+                PvpnMessage::UpdateTun(create_tun_stream) => {
+                    self.streams.update_tun(create_tun_stream);
                 },
                 PvpnMessage::UpdateWgPrivateKey(wg_private_key) => {
                     self.client.set_private_key(&wg_private_key.into());

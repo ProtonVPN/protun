@@ -17,7 +17,7 @@
 
 use std::{io, net::SocketAddr};
 
-use crate::connection::{streams::{PollResult, PollWaker, Stream, Streams}};
+use crate::connection::{streams::{PollResult, PollWaker, Stream, Streams}, CreateTunStream};
 use mio::{event, Events, Poll, Token, Waker};
 use pvpnclient::pvpnclient::{Deadline, StreamId};
 
@@ -147,6 +147,13 @@ impl Streams for MioStreams {
         } else {
             log::error!("stream not found: {:?}", stream_id);
         }
+    }
+
+    fn update_tun(&mut self, create_tun_stream: CreateTunStream) {
+        self.close_stream(StreamId::TUN_STREAM_ID);
+        let tun = create_tun_stream();
+        self.register_stream(StreamId::TUN_STREAM_ID, tun, mio::Interest::READABLE)
+            .expect("failed to register tun stream");
     }
 }
 
