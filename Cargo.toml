@@ -27,3 +27,8 @@ windows = []
 uniffi = ["dep:uniffi"]
 local-agent = ["dep:local-agent-rs"]
 local-agent-uniffi = ["local-agent", "uniffi", "local-agent-rs/uniffi"]
+
+[[bin]]
+name = "uniffi-bindgen"
+path = "uniffi-bindgen.rs"
+required-features = ["uniffi"]
