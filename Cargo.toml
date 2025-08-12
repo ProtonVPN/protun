@@ -10,7 +10,7 @@ crate-type = ["cdylib", "rlib"]
 libc = { version = "0.2.174", optional = true }
 local-agent-rs = { path = "local-agent-rs/local_agent_rs", optional = true }
 log = "0.4.27"
-mio = { version = "1.0.4", features = ["net", "os-poll", "os-ext"] }
+mio = { version = "1.0.4", features = ["net", "os-poll", "os-ext"], optional = true }
 pvpnclient = { path = "libpvpnclient" }
 socket2 = { version = "0.5.10", optional = true }
 uniffi = { version = "0.29.2", features = ["cli"], optional = true }
@@ -19,7 +19,7 @@ uniffi = { version = "0.29.2", features = ["cli"], optional = true }
 uniffi = { version = "0.29.2", features = ["build"], optional = true }
 
 [features]
-unix = ["dep:libc", "dep:socket2"]
+unix = ["dep:libc", "dep:socket2", "mio"]
 android = ["unix"]
 apple = ["unix"]
 linux = ["unix"]
@@ -27,6 +27,7 @@ windows = []
 uniffi = ["dep:uniffi"]
 local-agent = ["dep:local-agent-rs"]
 local-agent-uniffi = ["local-agent", "uniffi", "local-agent-rs/uniffi"]
+mio = ["dep:mio"]
 
 [[bin]]
 name = "uniffi-bindgen"

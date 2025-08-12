@@ -19,6 +19,7 @@ use std::io;
 use std::net::SocketAddr;
 use pvpnclient::pvpnclient::{Deadline, SocketOption, StreamId};
 
+#[cfg(feature = "mio")]
 use crate::connection::CreateTunStream;
 
 /// Abstraction over a socket or tun device.
@@ -49,6 +50,7 @@ pub(crate) trait Streams {
     fn set_poll_enable_wait_for_write(&mut self, stream_id: StreamId, wait_for_write: bool);
 
     /// Update the tun stream.
+    #[cfg(feature = "mio")]
     fn update_tun(&mut self, create_tun_stream: CreateTunStream);
 }
 
