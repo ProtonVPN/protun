@@ -15,7 +15,7 @@
 // You should have received a copy of the GNU General Public License
 // along with ProtonVPN.  If not, see <https://www.gnu.org/licenses/>.
 
-use std::{net::SocketAddr, sync::mpsc, thread};
+use std::{net::SocketAddr, sync::mpsc, thread::{self, JoinHandle}};
 
 use pvpnclient::pvpnclient::{Action, ActionKind, OpenStream, Peer, StreamId, TunnelInfo, VpnProtocol, VpnStreamKind};
 
@@ -30,7 +30,7 @@ use crate::{
         connection::{InitialConnectionConfig, PeerInfo, WgClientPrivateKey},
         state::{PeerConnectionInfo, Protocol, VpnConnectingError},
     },
-    connection::{pvpn_client::PvpnClient, pvpn_state_handler::PvpnConnectionStateHandler, streams::{PollResult, PollWaker, StreamResult, Streams}, util::now},
+    connection::{pvpn_client::PvpnClient, pvpn_state_handler::PvpnConnectionStateHandler, streams::{PollResult, PollWaker, StreamResult, Streams}},
 };
 
 /// State of the pvpn connection.
@@ -56,6 +56,8 @@ pub(crate) enum PvpnMessage {
     UpdateWgPrivateKey(WgClientPrivateKey),
 }
 
+pub(crate) type SendPvpnMessage = Box<dyn Fn(PvpnMessage) -> () + Send + Sync>;
+
 /// Starts a new thread with libpvpnclient connection loop.
 /// Returns a callback that can be used to send messages ([PvpnMessage]) to the connection loop.
 ///
@@ -68,20 +70,31 @@ pub(crate) fn start_pvpn_connection(
     create_client: impl FnOnce () -> Box<dyn PvpnClient> + Send + 'static,
     pvpn_state_change_callback: Box<dyn PvpnConnectionStateHandler + Send + 'static>,
     config: InitialConnectionConfig,
-) -> Box<dyn Fn(PvpnMessage) -> () + Send + Sync> {
+    now: fn() -> u64,
+) -> (SendPvpnMessage, JoinHandle<()>) {
     let (message_sender, message_receiver) = mpsc::channel();
-    thread::spawn(move || {
+    let join_handle = thread::spawn(move || {
         let client = create_client();
         let streams = create_streams();
-        let mut connection = PvpnConnection::new(client, streams, pvpn_state_change_callback, message_receiver, config.network_available, config.peers);
-        connection.run(config.wg_private_key);
+        let mut connection = PvpnConnection::new(
+            client,
+            streams,
+            pvpn_state_change_callback,
+            message_receiver,
+            config.network_available,
+            config.peers,
+            config.wg_private_key,
+            now,
+        );
+        connection.run();
     });
 
-    // Messsage sender will will interrupt the poll to make sure message is handled in timely manner.
-    Box::new(move |message| {
+    // Messsage sender will interrupt the poll to make sure message is handled in timely manner.
+    let send_msg = Box::new(move |message| {
         message_sender.send(message).unwrap();
         poll_waker.wake();
-    })
+    });
+    (send_msg, join_handle)
 }
 
 const STREAM_BUFFER_SIZE: usize = 65536;
@@ -97,6 +110,7 @@ struct PvpnConnection {
     stream_read_buffer: Box<[u8; STREAM_BUFFER_SIZE]>,
     should_stop: bool,
     current_tun_error: Option<String>,
+    now: fn() -> u64,
 }
 impl PvpnConnection {
     fn new(
@@ -106,8 +120,10 @@ impl PvpnConnection {
         message_receiver: mpsc::Receiver<PvpnMessage>,
         network_available: bool,
         peers: Vec<PeerInfo>,
+        wg_private_key: WgClientPrivateKey,
+        now: fn() -> u64,
     ) -> Self {
-        Self {
+        let mut ret = Self {
             client,
             streams,
             state_change_callback,
@@ -118,29 +134,36 @@ impl PvpnConnection {
             stream_read_buffer: Box::new([0; STREAM_BUFFER_SIZE]),
             should_stop: false,
             current_tun_error: None,
+            now,
+        };
+        ret.client.set_private_key(&wg_private_key.into());
+        if ret.network_available {
+            ret.activate_peers();
+        } else {
+            ret.set_state(PvpnConnectionState::WaitingForNetwork);
         }
+        ret
     }
 
-    fn run(&mut self, wg_private_key: WgClientPrivateKey) {
-        self.client.set_private_key(&wg_private_key.into());
-        if self.network_available {
-            self.activate_peers();
-        } else {
-            self.set_state(PvpnConnectionState::WaitingForNetwork);
-        }
-
+    fn run(&mut self) {
         while self.handle_messages() {
-            self.client.set_time(now());
+            self.client.set_time((self.now)());
             self.pull_from_client();
-
-            let info = self.client.get_tunnel_info();
-            self.set_state(to_client_state(info, self.current_tun_error.clone(), &self.peers));
-
+            self.update_state();
             self.poll_from_streams();
         }
 
         self.set_state(PvpnConnectionState::Disconnected);
         log::info!("pvpn connection loop finished");
+    }
+
+    fn update_state(&mut self) {
+        if self.network_available {
+            let info = self.client.get_tunnel_info();
+            self.set_state(to_client_state(info, self.current_tun_error.clone(), &self.peers));
+        } else {
+            self.set_state(PvpnConnectionState::WaitingForNetwork);
+        }
     }
 
     fn handle_messages(&mut self) -> bool {
@@ -170,37 +193,40 @@ impl PvpnConnection {
     }
 
     fn pull_from_client(&mut self) {
-        while let Some(action) = self.client.pull() {
-            let (stream_id, kind) = action.into_parts();
-            match kind {
-                ActionKind::Open(open_stream) =>
-                    self.handle_open(stream_id, &open_stream),
-                ActionKind::Write(vec) =>
-                    self.handle_write(stream_id, vec),
-                ActionKind::Set(socket_option) =>
-                    if let Some(stream) = self.streams.get_stream(stream_id) {
-                        stream.set_option(&socket_option);
-                    } else {
-                        log::error!("stream {:?} not found", stream_id);
+        while self.client.need_pull() {
+            if let Some(action) = self.client.pull() {
+                let (stream_id, kind) = action.into_parts();
+                match kind {
+                    ActionKind::Open(open_stream) =>
+                        self.handle_open(stream_id, &open_stream),
+                    ActionKind::Write(vec) =>
+                        self.handle_write(stream_id, vec),
+                    ActionKind::Set(socket_option) =>
+                        if let Some(stream) = self.streams.get_stream(stream_id) {
+                            stream.set_option(&socket_option);
+                        } else {
+                            log::error!("stream {:?} not found", stream_id);
+                        }
+                    ActionKind::Close => {
+                        log::info!("closing stream {:?}", stream_id);
+                        self.streams.close_stream(stream_id)
                     }
-                ActionKind::Close => {
-                    log::info!("closing stream {:?}", stream_id);
-                    self.streams.close_stream(stream_id)
-                }
-                ActionKind::Shutdown => {
-                    log::info!("stream shutdown {:?}", stream_id);
-                    if let Some(stream) = self.streams.get_stream(stream_id) {
-                        stream.shutdown_write();
-                    } else {
-                        log::error!("stream {:?} not found", stream_id);
+                    ActionKind::Shutdown => {
+                        log::info!("stream shutdown {:?}", stream_id);
+                        if let Some(stream) = self.streams.get_stream(stream_id) {
+                            stream.shutdown_write();
+                        } else {
+                            log::error!("stream {:?} not found", stream_id);
+                        }
                     }
-                }
 
-                // Actions below can only be passed to libvpnclient
-                ActionKind::Read(_) |
-                ActionKind::Error(_) |
-                ActionKind::Done => {
-                    assert!(false, "Unexpected action pulled from libvpnclient");
+                    // Actions below can only be passed to libvpnclient
+                    ActionKind::Read(_) |
+                    ActionKind::Error(_) |
+                    ActionKind::Done => {
+                        log::error!("Unexpected action pulled from libvpnclient: {:?}", kind);
+                        debug_assert!(false, "Unexpected action pulled from libvpnclient: {:?}", kind);
+                    }
                 }
             }
         }
@@ -209,7 +235,7 @@ impl PvpnConnection {
     fn poll_from_streams(&mut self) {
         let deadline = self.client.wakeup_deadline();
         let poll_results = self.streams.poll(deadline);
-        self.client.set_time(now());
+        self.client.set_time((self.now)());
         match poll_results {
             Ok(poll_results) => {
                 for res in &poll_results {
@@ -243,8 +269,8 @@ impl PvpnConnection {
 
     fn handle_open(&mut self, stream_id: StreamId, open_stream: &OpenStream) {
         let is_udp = open_stream.kind() == VpnStreamKind::Udp;
-        log::info!("opening {} socket id={:?}: {}, is_udp={}",
-            if is_udp { "udp" } else { "tcp" }, stream_id, open_stream.addr(), is_udp);
+        log::info!("opening {} socket id={:?}: {}",
+            if is_udp { "udp" } else { "tcp" }, stream_id, open_stream.addr());
         let open_result = if is_udp {
             self.streams.open_new_udp_stream(stream_id, open_stream.addr())
         } else {
@@ -335,29 +361,24 @@ impl PvpnConnection {
         let changed = is_network_available != self.network_available;
         if is_network_available || changed {
             self.network_available = is_network_available;
-            if changed {
-                log::info!("setting network available: {}", is_network_available);
+            if !changed {
+                log::info!("network adapters changed. resetting connection...");
+            } else if is_network_available {
+                log::info!("network is now available");
             } else {
-                log::info!("network change");
+                log::info!("network lost");
             }
             self.deactivate_peers();
-            self.set_state(
-                if is_network_available {
-                    PvpnConnectionState::Connecting(vec![], None)
-                } else {
-                    PvpnConnectionState::WaitingForNetwork
-                }
-            );
             if is_network_available {
                 self.activate_peers();
+            } else {
+                self.set_state(PvpnConnectionState::WaitingForNetwork);
             }
         }
     }
 
     fn set_peers(&mut self, new_peers: Vec<PeerInfo>) {
-        for peer in &self.peers {
-            self.client.peer_remove(peer.addr());
-        }
+        self.deactivate_peers();
         self.peers = new_peers;
         if self.network_available {
             self.activate_peers();

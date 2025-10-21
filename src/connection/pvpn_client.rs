@@ -19,7 +19,7 @@ use std::io::ErrorKind;
 use pvpnclient::pvpnclient::{Deadline, Peer, PeerAddr, TunnelInfo, WireguardPrivateKey};
 use pvpnclient::pvpnclient::Client;
 use pvpnclient::pvpnclient::{Action, PvpnReturn, StreamId, Task};
-use crate::connection::util::{error_kind_to_socket_err, now};
+use crate::connection::util::{error_kind_to_socket_err};
 
 /// Abstraction over [pvpnclient::pvpnclient::Client]
 pub trait PvpnClient {
@@ -42,7 +42,7 @@ pub(crate) struct PvpnClientImpl<'a> {
     wakeup_deadline: Deadline
 }
 impl <'a> PvpnClientImpl<'a> {
-    pub(crate) fn new() -> Self {
+    pub(crate) fn new(now: fn() -> u64) -> Self {
         PvpnClientImpl { c: Client::new(now()), need_pull: true, wakeup_deadline: None }
     }
 
@@ -91,8 +91,7 @@ impl <'a> PvpnClient for PvpnClientImpl<'a> {
     }
 
     fn push_error(&mut self, stream_id: StreamId, error_kind: ErrorKind) {
-        let result = &self.c.push(Action::error(stream_id, error_kind_to_socket_err(error_kind)));
-        self.handle_result(result);
+        self.push(Action::error(stream_id, error_kind_to_socket_err(error_kind)));
     }
 
     fn notify_network_change(&mut self) {

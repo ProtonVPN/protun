@@ -22,3 +22,6 @@ pub mod type_conversions;
 
 #[cfg(feature = "unix")]
 pub mod connection_unix;
+
+#[cfg(test)]
+mod tests;

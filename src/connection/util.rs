@@ -19,7 +19,7 @@ use std::{io::ErrorKind, net::IpAddr, num::NonZeroU16, str::FromStr};
 use pvpnclient::pvpnclient::{NanoSecTimestamp, Peer, PeerAddr, SocketErr};
 use crate::api::connection::PeerInfo;
 
-pub(crate) fn now() -> NanoSecTimestamp {
+pub(crate) fn epoch_now_ns() -> NanoSecTimestamp {
     std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .unwrap()
@@ -43,12 +43,7 @@ pub(crate) fn error_kind_to_socket_err(error_kind: ErrorKind) -> SocketErr {
 impl PeerInfo {
 
     pub(crate) fn as_peer(&self) -> Peer {
-        let addr = IpAddr::from_str(&self.server_ip).expect("not a valid IP");
-        let peer_ip = match addr {
-            IpAddr::V4(addr) => (Some(addr), None),
-            IpAddr::V6(addr) => (None, Some(addr)),
-        };
-        let peer_addr = PeerAddr::try_from(peer_ip).expect("not a valid IP");
+        let peer_addr = self.addr();
         Peer::builder(peer_addr, self.server_public_key.clone().into())
             .with_tag(&self.peer_id)
             .udp_ports(&Self::to_non_zero_vec(&self.udp_ports))
@@ -61,16 +56,17 @@ impl PeerInfo {
     fn to_non_zero_vec(ports: &Vec<u16>) -> Vec<NonZeroU16> {
         ports
             .iter()
-            .map(|&x| x.try_into().expect("not a valid port"))
+            .filter(|&x| *x != 0)
+            .map(|&x| x.try_into().unwrap())
             .collect::<Vec<_>>()
     }
 
     pub(crate) fn addr(&self) -> PeerAddr {
-        let addr = IpAddr::from_str(&self.server_ip).expect("not a valid IP");
+        let addr = IpAddr::from_str(&self.server_ip).expect(&format!("not a valid IP: {}", self.server_ip));
         let peer_ip = match addr {
             IpAddr::V4(addr) => (Some(addr), None),
             IpAddr::V6(addr) => (None, Some(addr)),
         };
-        PeerAddr::try_from(peer_ip).expect("not a valid IP")
+        PeerAddr::try_from(peer_ip).expect("shouldn't happen")
     }
 }

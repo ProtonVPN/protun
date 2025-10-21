@@ -15,7 +15,7 @@
 // You should have received a copy of the GNU General Public License
 // along with ProtonVPN.  If not, see <https://www.gnu.org/licenses/>.
 
-use std::sync::Arc;
+use std::{sync::Arc, thread::JoinHandle};
 
 #[cfg(feature = "local-agent")]
 use {
@@ -27,7 +27,7 @@ use {
 use crate::connection::pvpn_state_handler::PvpnToApiStateHandler;
 
 use crate::{api::state::State, connection::pvpn_client::PvpnClient};
-use crate::connection::pvpn_connection::{start_pvpn_connection, PvpnMessage};
+use crate::connection::pvpn_connection::{start_pvpn_connection, PvpnMessage, SendPvpnMessage};
 use crate::connection::streams::{PollWaker, Streams};
 
 pub const CLIENT_PRIV_KEY_SIZE_BYTES: usize = 32;
@@ -63,7 +63,7 @@ pub struct WgPeerPublicKey(pub [u8; PEER_PUB_KEY_SIZE_BYTES]);
 /// For initializing logging, see [crate::api::logger::init_logger].
 #[cfg_attr(feature = "uniffi", derive(uniffi::Object))]
 pub struct Connection {
-    pub(crate) send_pvpn_message: Box<dyn Fn(PvpnMessage) -> () + Send + Sync>,
+    pub(crate) send_pvpn_message: SendPvpnMessage,
     #[cfg(feature = "local-agent")]
     pub(crate) send_local_agent_message: Box<dyn Fn(LocalAgentMessage) -> () + Send + Sync>,
 }
@@ -77,7 +77,8 @@ impl Connection {
         create_client: impl FnOnce() -> Box<dyn PvpnClient> + Send + 'static,
         state_change_callback: Arc<dyn StateChangedCallback>,
         config: InitialConnectionConfig,
-    ) -> Self {
+        now: fn() -> u64,
+    ) -> (Self, JoinHandle<()>) {
         #[cfg(not(feature = "local-agent"))]
         // When local agent is not enabled just translate pvpn state to api state.
         let pvpn_state_change_callback = Box::new(PvpnToApiStateHandler { state_change_callback });
@@ -87,18 +88,19 @@ impl Connection {
         let (pvpn_state_change_callback, send_local_agent_message) =
             start_local_agent_task(config.local_agent.clone(), state_change_callback);
 
-        let send_pvpn_message = start_pvpn_connection(
+        let (send_pvpn_message, join_handle) = start_pvpn_connection(
             poll_waker,
             create_streams,
             create_client,
             pvpn_state_change_callback,
             config,
+            now,
         );
-        Self {
+        (Self {
             send_pvpn_message,
             #[cfg(feature = "local-agent")]
             send_local_agent_message,
-        }
+        }, join_handle)
     }
 }
 
@@ -122,6 +124,9 @@ impl Connection {
         }
     }
 
+    /// Call it when connectivity or underlying network adapter(s) change
+    /// (e.g. network switched from wifi to mobile). Library will use that information
+    /// to reset VPN connection sockets.
     #[cfg_attr(feature = "uniffi", uniffi::method)]
     pub fn on_set_network_available(&self, is_network_available: bool) {
         (self.send_pvpn_message)(PvpnMessage::SetIsNetworkAvailable(is_network_available));

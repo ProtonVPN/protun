@@ -15,17 +15,7 @@
 // You should have received a copy of the GNU General Public License
 // along with ProtonVPN.  If not, see <https://www.gnu.org/licenses/>.
 
-#[cfg(feature = "mio")]
-use crate::connection::mio::streams::MioStream;
+mod dummy_protocol;
+mod test_helpers;
 
-pub(crate) mod pvpn_client;
-pub(crate) mod pvpn_connection;
-pub(crate) mod pvpn_state_handler;
-pub(crate) mod streams;
-pub(crate) mod util;
-
-#[cfg(feature = "mio")]
-pub(crate) mod mio;
-
-#[cfg(feature = "mio")]
-pub(crate) type CreateTunStream = Box<dyn FnOnce () -> Box<dyn MioStream> + Send + 'static>;
+mod dummy_connection_tests;

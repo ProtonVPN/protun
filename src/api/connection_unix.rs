@@ -17,7 +17,7 @@
 
 use crate::{
     api::connection::{Connection, InitialConnectionConfig, StateChangedCallback},
-    connection::{mio::{socket_factory_unix::SocketFactoryUnix, streams::MioStreams, tun_unix::TunStreamUnix}, pvpn_client::PvpnClientImpl, pvpn_connection::PvpnMessage},
+    connection::{mio::{socket_factory_unix::SocketFactoryUnix, streams::MioStreams, tun_unix::TunStreamUnix}, pvpn_client::PvpnClientImpl, pvpn_connection::PvpnMessage, util::epoch_now_ns},
 };
 
 #[cfg_attr(feature = "uniffi", uniffi::export)]
@@ -41,10 +41,11 @@ impl Connection {
                 let streams = MioStreams::new(tun_stream, socket_factory, poll).expect("Failed to create mio streams");
                 Box::new(streams)
             },
-            move || Box::new(PvpnClientImpl::new()),
+            move || Box::new(PvpnClientImpl::new(epoch_now_ns)),
             state_change_callback.into(),
             config,
-        )
+            epoch_now_ns,
+        ).0
     }
 
     /// Notifies library that file descriptor for tun device has changed.

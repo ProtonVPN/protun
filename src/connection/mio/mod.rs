@@ -24,4 +24,4 @@ pub(crate) mod tun_unix;
 pub(crate) mod streams;
 
 mod tcp;
-mod udp;
+pub(crate) mod udp;
