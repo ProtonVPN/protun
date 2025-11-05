@@ -20,8 +20,6 @@
 plugins {
     alias(sdkLibs.plugins.android.library)
     alias(sdkLibs.plugins.kotlin.android)
-    alias(sdkLibs.plugins.hilt.android)
-    alias(sdkLibs.plugins.ksp)
     id("kotlin-parcelize")
 }
 
@@ -67,7 +65,8 @@ android {
 
 dependencies {
     implementation(sdkLibs.androidx.annotation)
-    implementation(sdkLibs.hilt.android)
-    ksp(sdkLibs.hilt.compiler)
+    implementation(sdkLibs.androidx.core)
+    implementation(sdkLibs.coroutines.core)
+    implementation(sdkLibs.coroutines.android)
     api(project(rustProviderModule))
 }

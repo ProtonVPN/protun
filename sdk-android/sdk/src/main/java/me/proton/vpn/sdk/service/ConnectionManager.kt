@@ -1,0 +1,221 @@
+/*
+ * Copyright (c) 2025 Proton AG
+ *
+ * This file is part of ProtonVPN.
+ *
+ * ProtonVPN is free software: you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation, either version 3 of the License, or
+ * (at your option) any later version.
+ *
+ * ProtonVPN is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License
+ * along with ProtonVPN.  If not, see <https://www.gnu.org/licenses/>.
+ */
+
+package me.proton.vpn.sdk.service
+
+import android.net.Network
+import android.net.VpnService
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.launchIn
+import kotlinx.coroutines.flow.onEach
+import kotlinx.coroutines.launch
+import me.proton.vpn.sdk.api.InitialConfig
+import me.proton.vpn.sdk.api.InterfaceConfig
+import me.proton.vpn.sdk.api.Logger
+import me.proton.vpn.sdk.api.Peer
+import me.proton.vpn.sdk.api.PeerConnection
+import me.proton.vpn.sdk.api.VpnConnectionState
+import me.proton.vpn.sdk.api.VpnErrorKind
+import me.proton.vpn.sdk.api.VpnProtocol
+import me.proton.vpn.sdk.internal.WallClockMs
+import me.proton.vpn.sdk.service.usecases.EstablishTun
+import me.proton.vpn.sdk.service.usecases.NetworkObserver
+import uniffi.protun.Connection
+import uniffi.protun.InitialConnectionConfig
+import uniffi.protun.LogLevel
+import uniffi.protun.PeerConnectionInfo
+import uniffi.protun.PeerInfo
+import uniffi.protun.PrivateKeyUpdateInfo
+import uniffi.protun.Protocol
+import uniffi.protun.State
+import uniffi.protun.StateChangedCallback
+import uniffi.protun.VpnConnectingError
+import java.lang.ref.WeakReference
+import java.net.InetSocketAddress
+import java.util.Date
+import kotlin.io.encoding.Base64
+import kotlin.io.encoding.ExperimentalEncodingApi
+
+internal class ConnectionManager(
+    private val networkObserver: NetworkObserver,
+    private val establishTun: EstablishTun,
+    private val wallClockMs: WallClockMs,
+    private val logger: Logger
+
+) {
+    data class ActiveConnection(
+        val connection: Connection,
+        val validatedNetworks: Set<Network>,
+        val startedAt: Date,
+    )
+
+    private lateinit var serviceScope: CoroutineScope
+    var activeConnection: ActiveConnection? = null
+        private set
+
+    val state = MutableStateFlow<VpnConnectionState>(VpnConnectionState.Disconnected)
+
+    fun init(serviceScope: CoroutineScope) {
+        this.serviceScope = serviceScope
+        networkObserver.validatedNetworks.onEach { validatedNetworks ->
+            logger.log(LogLevel.INFO, "Validated networks change: $validatedNetworks")
+            activeConnection?.let { connection ->
+                if (connection.validatedNetworks != validatedNetworks) {
+                    activeConnection = connection.copy(validatedNetworks = validatedNetworks)
+                    connection.connection.onSetNetworkAvailable(validatedNetworks.isNotEmpty())
+                }
+            }
+        }.launchIn(serviceScope)
+    }
+
+    fun connect(
+        config: InitialConfig,
+        builder: VpnService.Builder,
+        socketProtectCallback: ProTunSocketProtectCallback
+    ) {
+        if (activeConnection != null)
+            clearConnection(VpnConnectionState.Connecting(emptyList()))
+
+        when (val establishResult = establishTun(config.interfaceConfig, builder)) {
+            is EstablishTun.Result.Success -> {
+                val tunFd = establishResult.fd
+                val stateChangeCallback = ProTunStateChangedCallback(WeakReference(this))
+                val validatedNetworks = networkObserver.validatedNetworks.value
+                val networkAvailable = validatedNetworks.isNotEmpty()
+                logger.log(LogLevel.INFO, "pvpn: Starting ProTUN, network available: $networkAvailable")
+                val nativeConnection = Connection.unixConnect(
+                    config = InitialConnectionConfig(
+                        wgPrivateKey = config.clientED25519PrivateKeyBase64.decodeBase64(),
+                        peers = config.peers.toUniFFI(),
+                        networkAvailable = networkAvailable,
+                    ),
+                    tunFd = tunFd.detachFd(),
+                    stateChangeCallback = stateChangeCallback,
+                    socketFdAvailableCallback = socketProtectCallback,
+                )
+                activeConnection = ActiveConnection(
+                    connection = nativeConnection,
+                    validatedNetworks = validatedNetworks,
+                    startedAt = Date(wallClockMs()),
+                )
+            }
+            is EstablishTun.Result.Failure -> {
+                state.value = establishResult.errorState
+            }
+        }
+    }
+
+    fun clearConnection(endState: VpnConnectionState = VpnConnectionState.Disconnected) {
+        activeConnection?.apply {
+            connection.disconnect()
+            connection.destroy() //TODO: is fd closed in destroy?
+        }
+        activeConnection = null
+        state.value = endState
+    }
+
+    fun updateInterfaceConfig(interfaceConfig: InterfaceConfig, builder: VpnService.Builder) {
+        val ongoingConnection = activeConnection
+        if (ongoingConnection != null) {
+            when (val establishResult = establishTun(interfaceConfig, builder)) {
+                is EstablishTun.Result.Failure -> {
+                    clearConnection(establishResult.errorState)
+                }
+                is EstablishTun.Result.Success -> {
+                    val newTunFd = establishResult.fd
+                    logger.log(LogLevel.INFO, "pvpn: Re-established VPN interface ${newTunFd.fd}")
+                    ongoingConnection.connection.updateUnixTun(newTunFd.detachFd())
+                }
+            }
+        }
+    }
+
+    fun updatePeers(peers: List<Peer>) {
+        activeConnection?.connection?.updatePeers(peers.toUniFFI()) //TODO: can throw
+    }
+
+    fun updateClientPrivateKey(clientED25519PrivateKeyPem: String) {
+        activeConnection?.connection?.updateWgPrivateKey(
+            PrivateKeyUpdateInfo(clientED25519PrivateKeyPem.decodeBase64())
+        )
+    }
+
+    fun onProTunStateChange(proTunState: State) {
+        serviceScope.launch {
+            state.value = activeConnection?.let { activeConnection ->
+                when (proTunState) {
+                    State.Disconnected -> VpnConnectionState.Disconnected
+                    State.WaitingForNetwork -> VpnConnectionState.WaitingForNetwork
+                    is State.Connected -> VpnConnectionState.Connected(
+                        proTunState.peer.toPeerConnection(),
+                        connectedSince = activeConnection.startedAt
+                    )
+
+                    is State.Connecting -> {
+                        proTunState.error?.toErrorState()
+                            ?: VpnConnectionState.Connecting(proTunState.peers.map { it.toPeerConnection() })
+                    }
+                }
+            } ?: VpnConnectionState.Disconnected
+        }
+    }
+}
+
+private fun PeerConnectionInfo.toPeerConnection(): PeerConnection =
+    PeerConnection(
+        protocol = protocol.toVpnProtocol(),
+        id = peerId,
+        entryAddr = InetSocketAddress(entryIp, port.toInt())
+    )
+
+private fun List<Peer>.toUniFFI(): List<PeerInfo> = map { peer ->
+    PeerInfo(
+        peerId = peer.id,
+        serverIp = requireNotNull(peer.address.hostAddress),
+        serverPublicKey = peer.publicKeyX25519Base64.decodeBase64(),
+        tcpPorts = peer.ports[VpnProtocol.WireGuardTcp]?.map { it.toUShort() } ?: emptyList(),
+        udpPorts = peer.ports[VpnProtocol.WireGuardUdp]?.map { it.toUShort() } ?: emptyList(),
+        tlsPorts = peer.ports[VpnProtocol.Stealth]?.map { it.toUShort() } ?: emptyList(),
+        priority = peer.priority,
+    )
+}
+
+private fun VpnConnectingError.toErrorState(): VpnConnectionState.Error =
+    when (this) {
+        is VpnConnectingError.TunIoError ->
+            VpnConnectionState.Error(VpnErrorKind.TunInterfaceError, message, isFinal = false)
+        VpnConnectingError.PeerUnreachable ->
+            VpnConnectionState.Error(VpnErrorKind.PeersUnreachable, "All peers unreachable", isFinal = false)
+    }
+
+internal class ProTunStateChangedCallback(val weakManager: WeakReference<ConnectionManager>): StateChangedCallback {
+    override fun onStateChanged(state: State) {
+        weakManager.get()?.onProTunStateChange(state)
+    }
+}
+
+private fun Protocol.toVpnProtocol(): VpnProtocol = when (this) {
+    Protocol.WIREGUARD_UDP -> VpnProtocol.WireGuardUdp
+    Protocol.WIREGUARD_TCP -> VpnProtocol.WireGuardTcp
+    Protocol.STEALTH -> VpnProtocol.Stealth
+}
+
+@OptIn(ExperimentalEncodingApi::class)
+private fun String.decodeBase64(): ByteArray = Base64.decode(this)

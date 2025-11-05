@@ -21,12 +21,15 @@ package me.proton.vpn.sdk.api
 
 interface SystemEventHandler {
 
-    // VPN service was restored by the system, after it was killed for some reason (e.g. crashed).
-    // If app decides to restore VPN connection, it should use [ProtonVpnSdk.connect] to do so and
-    // return true from this method to keep VpnService running.
-    fun onProcessRestored(): Boolean
+    /**
+     * VPN service was restored by the system, after it was killed for some reason (e.g. crashed).
+     * If app decides to restore VPN connection, it should use [ProtonVpnConnectionManager.connect].
+     */
+    fun onProcessRestored()
 
-    // Always-on VPN was toggled in system setting, app should initiate connection appropriate for
-    // always-on with [ProtonVpnSdk.connect].
+    /**
+     * Always-on VPN was toggled in system setting, app should initiate connection appropriate for
+     * always-on with [ProtonVpnConnectionManager.connect].
+     */
     fun onAlwaysOnEnabled()
 }
