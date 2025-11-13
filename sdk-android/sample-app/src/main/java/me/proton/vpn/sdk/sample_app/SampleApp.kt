@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2025. Proton AG
+ * Copyright (c) 2025 Proton AG
  *
  * This file is part of ProtonVPN.
  *
@@ -17,29 +17,16 @@
  * along with ProtonVPN.  If not, see <https://www.gnu.org/licenses/>.
  */
 
-pluginManagement {
-    repositories {
-        google()
-        mavenCentral()
-        gradlePluginPortal()
+package me.proton.vpn.sdk.sample_app
+
+import android.app.Application
+import dagger.hilt.android.HiltAndroidApp
+
+@HiltAndroidApp
+class SampleApp : Application() {
+
+    override fun onCreate() {
+        super.onCreate()
+        initializeNotificationChannel()
     }
 }
-
-dependencyResolutionManagement {
-    repositoriesMode.set(RepositoriesMode.FAIL_ON_PROJECT_REPOS)
-    repositories {
-        google()
-        mavenCentral()
-    }
-    versionCatalogs {
-        // Use alternative name to avoid collision when included by another project
-        create("sdkLibs") {
-            from(files("gradle/libs.versions.toml"))
-        }
-    }
-}
-
-rootProject.name = "sdk-android"
-include(":sdk")
-include(":sdk-rust")
-include(":sample-app")
