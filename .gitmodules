@@ -1,3 +1,6 @@
 [submodule "local-agent-rs"]
 	path = local-agent-rs
 	url = ../../linux/local-agent-rs/
+[submodule "libpvpnclient"]
+	path = libpvpnclient
+	url = ../libpvpnclient/

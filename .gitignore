@@ -3,6 +3,5 @@ target/
 **/*.rs.bk
 *.pdb
 src/uniffi/
-.cargo/
 .vscode/
 out/

@@ -1,0 +1,71 @@
+// Copyright (c) 2025 Proton AG
+//
+// This file is part of ProtonVPN.
+//
+// ProtonVPN is free software: you can redistribute it and/or modify
+// it under the terms of the GNU General Public License as published by
+// the Free Software Foundation, either version 3 of the License, or
+// (at your option) any later version.
+//
+// ProtonVPN is distributed in the hope that it will be useful,
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+// GNU General Public License for more details.
+//
+// You should have received a copy of the GNU General Public License
+// along with ProtonVPN.  If not, see <https://www.gnu.org/licenses/>.
+
+use std::{io::ErrorKind, net::IpAddr, num::NonZeroU16};
+use pvpnclient::pvpnclient::{NanoSecTimestamp, Peer, PeerAddr, SocketErr};
+use crate::api::connection::PeerInfo;
+
+pub(crate) fn epoch_now_ns() -> NanoSecTimestamp {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap()
+        .as_nanos() as u64
+}
+
+pub(crate) fn error_kind_to_socket_err(error_kind: ErrorKind) -> SocketErr {
+    match error_kind {
+        ErrorKind::ConnectionRefused => SocketErr::ConnectionRefused,
+        ErrorKind::TimedOut => SocketErr::Timeout,
+        ErrorKind::HostUnreachable => SocketErr::HostUnreachable,
+        ErrorKind::NetworkUnreachable => SocketErr::NetworkUnreachable,
+        ErrorKind::AddrInUse => SocketErr::AddressInUse,
+        ErrorKind::ConnectionAborted => SocketErr::ConnectionAborted,
+        ErrorKind::ConnectionReset => SocketErr::ConnectionReset,
+        ErrorKind::NotConnected => SocketErr::NotConnected,
+        _ => SocketErr::Unknown,
+    }
+}
+
+impl PeerInfo {
+
+    pub(crate) fn as_peer(&self) -> Peer {
+        let peer_addr = self.addr();
+        Peer::builder(peer_addr, self.server_public_key.clone().into())
+            .with_tag(&self.peer_id)
+            .udp_ports(&Self::to_non_zero_vec(&self.udp_ports))
+            .tcp_ports(&Self::to_non_zero_vec(&self.tcp_ports))
+            .tls_ports(&Self::to_non_zero_vec(&self.tls_ports))
+            .priority(self.priority as i16)
+            .build()
+    }
+
+    fn to_non_zero_vec(ports: &Vec<u16>) -> Vec<NonZeroU16> {
+        ports
+            .iter()
+            .filter(|&x| *x != 0)
+            .map(|&x| x.try_into().unwrap())
+            .collect::<Vec<_>>()
+    }
+
+    pub(crate) fn addr(&self) -> PeerAddr {
+        let peer_ip = match self.server_ip.0 {
+            IpAddr::V4(addr) => (Some(addr), None),
+            IpAddr::V6(addr) => (None, Some(addr)),
+        };
+        PeerAddr::try_from(peer_ip).expect("shouldn't happen")
+    }
+}
