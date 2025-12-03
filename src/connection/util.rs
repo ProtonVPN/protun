@@ -15,7 +15,7 @@
 // You should have received a copy of the GNU General Public License
 // along with ProtonVPN.  If not, see <https://www.gnu.org/licenses/>.
 
-use std::{io::ErrorKind, net::IpAddr, num::NonZeroU16, str::FromStr};
+use std::{io::ErrorKind, net::IpAddr, num::NonZeroU16};
 use pvpnclient::pvpnclient::{NanoSecTimestamp, Peer, PeerAddr, SocketErr};
 use crate::api::connection::PeerInfo;
 
@@ -62,8 +62,7 @@ impl PeerInfo {
     }
 
     pub(crate) fn addr(&self) -> PeerAddr {
-        let addr = IpAddr::from_str(&self.server_ip).expect(&format!("not a valid IP: {}", self.server_ip));
-        let peer_ip = match addr {
+        let peer_ip = match self.server_ip.0 {
             IpAddr::V4(addr) => (Some(addr), None),
             IpAddr::V6(addr) => (None, Some(addr)),
         };

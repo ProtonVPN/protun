@@ -27,7 +27,7 @@ use rand::Rng;
 use crate::{
     api::{
         connection::{
-            Connection, InitialConnectionConfig, PeerInfo, StateChangedCallback, WgClientPrivateKey, WgPeerPublicKey,
+            Connection, InitialConnectionConfig, PeerInfo, IpAddress, StateChangedCallback, WgClientPrivateKey, WgPeerPublicKey
         },
         state::State,
         tests::dummy_protocol::{DummyProtocolPacket, DummyPvpnClient},
@@ -194,7 +194,7 @@ pub(crate) fn create_udp_peer(id: u8) -> (std::net::UdpSocket, PeerInfo) {
     let socket_addr = socket.local_addr().unwrap();
     (socket, PeerInfo {
         peer_id: format!("peer_{id}"),
-        server_ip: socket_addr.ip().to_string(),
+        server_ip: IpAddress(socket_addr.ip()),
         server_public_key: WgPeerPublicKey([id; 32]),
         udp_ports: vec![socket_addr.port()],
         tcp_ports: vec![],
@@ -208,7 +208,7 @@ pub(crate) fn create_tcp_peer(ip: &str, id: u8) -> (std::net::TcpListener, PeerI
     let socket_addr = socket.local_addr().unwrap();
     (socket, PeerInfo {
         peer_id: format!("peer_{id}"),
-        server_ip: ip.to_string(),
+        server_ip: ip.to_string().try_into().unwrap(),
         server_public_key: WgPeerPublicKey([id; 32]),
         udp_ports: vec![],
         tcp_ports: vec![socket_addr.port()],

@@ -15,7 +15,7 @@
 // You should have received a copy of the GNU General Public License
 // along with ProtonVPN.  If not, see <https://www.gnu.org/licenses/>.
 
-use std::{sync::Arc, thread::JoinHandle};
+use std::{net::IpAddr, sync::Arc, thread::JoinHandle};
 
 #[cfg(feature = "local-agent")]
 use {
@@ -36,6 +36,9 @@ pub const PEER_PUB_KEY_SIZE_BYTES: usize = 32;
 /// [CLIENT_PRIV_KEY_SIZE_BYTES] bytes long client private key.
 #[derive(Clone)]
 pub struct WgClientPrivateKey(pub [u8; CLIENT_PRIV_KEY_SIZE_BYTES]);
+
+/// Wrapper around IpAddr to be used in uniffi.
+pub struct IpAddress(pub IpAddr);
 
 /// [PEER_PUB_KEY_SIZE_BYTES] bytes long peer public key.
 #[derive(Clone)]
@@ -202,7 +205,7 @@ pub struct PeerInfo {
     /// Local agent info for the peer.
     #[cfg(feature = "local-agent")]
     pub local_agent: Option<PeerLocalAgentInfo>,
-    pub server_ip: String,
+    pub server_ip: IpAddress,
     pub server_public_key: WgPeerPublicKey,
     pub udp_ports: Vec<u16>,
     pub tcp_ports: Vec<u16>,
