@@ -1,0 +1,23 @@
+[versions]
+agp = "8.10.1"
+hilt = "2.57.2"
+kotlin = "2.0.21"
+ksp = "2.0.21-1.0.27"
+jna = "5.16.0"
+
+minSdk = "21"
+minCompileSdk = "35"
+compileSdk = "36"
+
+[libraries]
+androidx-annotation = { group = "androidx.annotation", name = "annotation", version = "1.9.1" }
+hilt-android = { group = "com.google.dagger", name = "hilt-android" , version.ref = "hilt" }
+hilt-compiler = { group = "com.google.dagger", name = "hilt-compiler" , version.ref = "hilt" }
+jna = { group = "net.java.dev.jna", name = "jna", version.ref = "jna" }
+
+[plugins]
+android-library = { id = "com.android.library", version.ref = "agp" }
+hilt-android = { id = "com.google.dagger.hilt.android", version.ref = "hilt" }
+kotlin-android = { id = "org.jetbrains.kotlin.android", version.ref = "kotlin" }
+ksp = { id = "com.google.devtools.ksp", version.ref = "ksp" }
+rustandroid = { id = "org.mozilla.rust-android-gradle.rust-android", version = "0.9.6" }
