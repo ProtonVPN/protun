@@ -30,7 +30,7 @@ plugins {
 val rustProviderModule = findProperty("protunSdkRustProviderModule") as String? ?: ":sdk-rust"
 
 android {
-    namespace = "ch.protonvpn.android.sdk"
+    namespace = "me.proton.vpn.sdk"
     compileSdk = sdkLibs.versions.compileSdk.get().toInt()
     ndkVersion = "28.1.13356709"
 

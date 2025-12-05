@@ -24,7 +24,7 @@ plugins {
 }
 
 android {
-    namespace = "ch.protonvpn.android.sdk_rust"
+    namespace = "me.proton.vpn.sdk_rust"
     compileSdk = sdkLibs.versions.compileSdk.get().toInt()
     ndkVersion = "28.1.13356709"
 
