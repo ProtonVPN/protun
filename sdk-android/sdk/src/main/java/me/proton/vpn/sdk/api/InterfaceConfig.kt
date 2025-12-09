@@ -27,34 +27,48 @@ private const val DEFAULT_MTU = 1460
 private val FULL_RANGE_IPV4 = IpNetworkPrefix(InetAddress.getByName("0.0.0.0"), 0)
 private val FULL_RANGE_IPV6 = IpNetworkPrefix(InetAddress.getByName("::"), 0)
 
-// Configuration of the TUN interface.
+/**
+ * Configuration of the TUN interface.
+ */
 @Parcelize
 data class InterfaceConfig(
 
-    // Should IPv6 traffic be routed through the VPN tunnel..
+    /**
+     * Should IPv6 traffic be routed through the VPN tunnel.
+     */
     val supportInTunnelIPv6: Boolean,
 
-    // List of custom DNS servers to be used while VPN is active. When empty (default), ProtonVPN
-    // own DNS service will be used.
-    // Note: features like NetShield provided by ProtonVPN DNS won't be supported when custom DNS
-    // servers are set.
+    /**
+     * List of custom DNS servers to be used while VPN is active. When empty (default), ProtonVPN
+     * own DNS service will be used.
+     * Note: features like NetShield provided by ProtonVPN DNS won't be supported when custom DNS
+     * servers are set.
+     */
     val customDns: List<String> = emptyList(),
 
-    // List of IP ranges that should be routed through the VPN tunnel. Rest of the traffic
-    // will go outside the tunnel, or when system's Kill Switch is enabled, be blocked.
+    /**
+     * List of IP ranges that should be routed through the VPN tunnel. Rest of the traffic
+     * will go outside the tunnel, or when system's Kill Switch is enabled, be blocked.
+     */
     val routes: List<IpNetworkPrefix> = defaultRoutes(supportInTunnelIPv6),
 
-    // Split tunneling configuration for apps, either in include or exclude mode. When null
-    // (default) all apps traffic (consistent with [routes]) will be go through the VPN tunnel.
+    /**
+     * Split tunneling configuration for apps, either in include or exclude mode. When null
+     * (default) all apps traffic (consistent with [routes]) will be go through the VPN tunnel.
+     */
     val splitTunnelAppsConfig: SplitTunnelAppsConfig? = null,
 
-    // MTU value for the TUN interface.
+    /**
+     * MTU value for the TUN interface.
+     */
     val mtu: Int = DEFAULT_MTU,
 ): Parcelable {
 
     companion object {
 
-        // Full IPv4 range and optional full IPv6 range.
+        /**
+         * Full IPv4 range and optional full IPv6 range.
+         */
         fun defaultRoutes(supportInTunnelIPv6: Boolean) = buildList {
             add(FULL_RANGE_IPV4)
             if (supportInTunnelIPv6)
@@ -63,8 +77,10 @@ data class InterfaceConfig(
     }
 }
 
-// Custom class for defining network ranges via prefix. Android's own IpPrefix is available from
-// API 33.
+/**
+ * Custom class for defining network ranges via prefix. Android's own IpPrefix is available from
+ * API 33.
+ */
 @Parcelize
 data class IpNetworkPrefix(val address: InetAddress, val prefixLength: Int): Parcelable
 

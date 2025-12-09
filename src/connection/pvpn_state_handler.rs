@@ -44,9 +44,9 @@ impl PvpnConnectionStateHandler for PvpnToApiStateHandler {
 impl PvpnConnectionState {
     pub fn to_api_state(self) -> State {
         match self {
-            PvpnConnectionState::Disconnected => State::Disconnected,
-            PvpnConnectionState::WaitingForNetwork => State::WaitingForNetwork,
-            PvpnConnectionState::Connecting(peers, error) => State::Connecting { peers, error },
+            PvpnConnectionState::Disconnected(error) => State::Disconnected { error },
+            PvpnConnectionState::Connecting(peers) => State::Connecting { peers },
+            PvpnConnectionState::WaitingForAction(reason) => State::WaitingForAction { reason },
             PvpnConnectionState::Connected(peer) => State::Connected { peer },
         }
     }

@@ -191,7 +191,7 @@ internal class ProTunVpnServiceBinder(
 
     private val callbacks = mutableSetOf<ProTunVpnServiceCallback>()
 
-    fun getState(): VpnConnectionState = weakService.get()?.state ?: VpnConnectionState.Disconnected
+    fun getState(): VpnConnectionState = weakService.get()?.state ?: VpnConnectionState.Disconnected()
 
     fun registerCallback(callback: ProTunVpnServiceCallback) {
         callbacks.add(callback)

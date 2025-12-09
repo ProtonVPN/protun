@@ -32,12 +32,14 @@ import me.proton.vpn.sdk.api.Logger
 import me.proton.vpn.sdk.api.Peer
 import me.proton.vpn.sdk.api.PeerConnection
 import me.proton.vpn.sdk.api.VpnConnectionState
-import me.proton.vpn.sdk.api.VpnErrorKind
+import me.proton.vpn.sdk.api.VpnDisconnectError
 import me.proton.vpn.sdk.api.VpnProtocol
+import me.proton.vpn.sdk.api.VpnWaitReason
 import me.proton.vpn.sdk.internal.WallClockMs
 import me.proton.vpn.sdk.service.usecases.EstablishTun
 import me.proton.vpn.sdk.service.usecases.NetworkObserver
 import uniffi.protun.Connection
+import uniffi.protun.DisconnectReason
 import uniffi.protun.InitialConnectionConfig
 import uniffi.protun.LogLevel
 import uniffi.protun.PeerConnectionInfo
@@ -46,7 +48,7 @@ import uniffi.protun.PrivateKeyUpdateInfo
 import uniffi.protun.Protocol
 import uniffi.protun.State
 import uniffi.protun.StateChangedCallback
-import uniffi.protun.VpnConnectingError
+import uniffi.protun.WaitReason
 import java.lang.ref.WeakReference
 import java.net.InetSocketAddress
 import java.util.Date
@@ -70,7 +72,7 @@ internal class ConnectionManager(
     var activeConnection: ActiveConnection? = null
         private set
 
-    val state = MutableStateFlow<VpnConnectionState>(VpnConnectionState.Disconnected)
+    val state = MutableStateFlow<VpnConnectionState>(VpnConnectionState.Disconnected())
 
     fun init(serviceScope: CoroutineScope) {
         this.serviceScope = serviceScope
@@ -117,15 +119,15 @@ internal class ConnectionManager(
                 )
             }
             is EstablishTun.Result.Failure -> {
-                state.value = establishResult.errorState
+                state.value = VpnConnectionState.Disconnected(establishResult.reason)
             }
         }
     }
 
-    fun clearConnection(endState: VpnConnectionState = VpnConnectionState.Disconnected) {
+    fun clearConnection(endState: VpnConnectionState = VpnConnectionState.Disconnected()) {
         activeConnection?.apply {
             connection.disconnect()
-            connection.destroy() //TODO: is fd closed in destroy?
+            connection.destroy()
         }
         activeConnection = null
         state.value = endState
@@ -136,7 +138,7 @@ internal class ConnectionManager(
         if (ongoingConnection != null) {
             when (val establishResult = establishTun(interfaceConfig, builder)) {
                 is EstablishTun.Result.Failure -> {
-                    clearConnection(establishResult.errorState)
+                    clearConnection(VpnConnectionState.Disconnected(establishResult.reason))
                 }
                 is EstablishTun.Result.Success -> {
                     val newTunFd = establishResult.fd
@@ -148,7 +150,7 @@ internal class ConnectionManager(
     }
 
     fun updatePeers(peers: List<Peer>) {
-        activeConnection?.connection?.updatePeers(peers.toUniFFI()) //TODO: can throw
+        activeConnection?.connection?.updatePeers(peers.toUniFFI())
     }
 
     fun updateClientPrivateKey(clientED25519PrivateKeyPem: String) {
@@ -159,23 +161,38 @@ internal class ConnectionManager(
 
     fun onProTunStateChange(proTunState: State) {
         serviceScope.launch {
-            state.value = activeConnection?.let { activeConnection ->
-                when (proTunState) {
-                    State.Disconnected -> VpnConnectionState.Disconnected
-                    State.WaitingForNetwork -> VpnConnectionState.WaitingForNetwork
+            val activeConnection = activeConnection
+            if (activeConnection == null)
+                state.value = VpnConnectionState.Disconnected()
+            else {
+                val newState = when (proTunState) {
+                    is State.Disconnected -> VpnConnectionState.Disconnected(proTunState.error?.toVpnDisconnectReason())
+                    is State.Connecting -> VpnConnectionState.Connecting(proTunState.peers.map { it.toPeerConnection() })
+                    is State.WaitingForAction -> handleAction(proTunState.reason)
                     is State.Connected -> VpnConnectionState.Connected(
                         proTunState.peer.toPeerConnection(),
                         connectedSince = activeConnection.startedAt
                     )
-
-                    is State.Connecting -> {
-                        proTunState.error?.toErrorState()
-                            ?: VpnConnectionState.Connecting(proTunState.peers.map { it.toPeerConnection() })
-                    }
                 }
-            } ?: VpnConnectionState.Disconnected
+                if (newState != null)
+                    state.value = newState
+            }
+
         }
     }
+
+    private fun handleAction(reason: WaitReason): VpnConnectionState? =
+        when (reason) {
+            is WaitReason.TunIoError -> {
+                //TODO(VPNAND-2460): Handle TUN I/O errors properly. Tun fd might invalid because:
+                // - another VPN app took over the TUN interface -> disconnect with error
+                // - system closed the TUN interface due to resource constraints
+                logger.log(LogLevel.ERROR, "TUN I/O error: ${reason.message}")
+                null
+            }
+            WaitReason.WaitingForNetwork ->
+                VpnConnectionState.WaitingForAction(VpnWaitReason.WaitingForNetwork)
+        }
 }
 
 private fun PeerConnectionInfo.toPeerConnection(): PeerConnection =
@@ -197,13 +214,9 @@ private fun List<Peer>.toUniFFI(): List<PeerInfo> = map { peer ->
     )
 }
 
-private fun VpnConnectingError.toErrorState(): VpnConnectionState.Error =
-    when (this) {
-        is VpnConnectingError.TunIoError ->
-            VpnConnectionState.Error(VpnErrorKind.TunInterfaceError, message, isFinal = false)
-        VpnConnectingError.PeerUnreachable ->
-            VpnConnectionState.Error(VpnErrorKind.PeersUnreachable, "All peers unreachable", isFinal = false)
-    }
+private fun DisconnectReason.toVpnDisconnectReason(): VpnDisconnectError = when (this) {
+    is DisconnectReason.TunEstablishError -> VpnDisconnectError.TunInterfaceError(message)
+}
 
 internal class ProTunStateChangedCallback(val weakManager: WeakReference<ConnectionManager>): StateChangedCallback {
     override fun onStateChanged(state: State) {

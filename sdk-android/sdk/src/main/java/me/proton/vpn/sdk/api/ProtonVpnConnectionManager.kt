@@ -56,7 +56,9 @@ interface ProtonVpnConnectionManager {
     fun updateClientPrivateKey(clientED25519PrivateKeyBase64: String)
     fun disconnect()
 
-    // Java-friendly state listener
+    /**
+     * Java-friendly state listener
+     */
     fun registerStateListener(listener: VpnConnectionStateListener)
     fun unregisterStateListener(listener: VpnConnectionStateListener)
 }
@@ -68,13 +70,19 @@ fun interface VpnConnectionStateListener {
 @Parcelize
 data class InitialConfig(
 
-    // TUN interface configuration specifying routes, split tunneling, DNS servers, etc.
+    /**
+     * TUN interface configuration specifying routes, split tunneling, DNS servers, etc.
+     */
     val interfaceConfig: InterfaceConfig,
 
-    // 32 bytes base64-encoded ED25519 private key
+    /**
+     * 32 bytes base64-encoded ED25519 private key.
+     */
     val clientED25519PrivateKeyBase64: String,
 
-    // List of available peers to connect to. The SDK will select best configuration
-    // (IP, protocol, ports) based on peer priority and reachability in current network conditions.
+    /**
+     * List of available peers to connect to. The SDK will select best configuration
+     * (IP, protocol, ports) based on peer priority and reachability in current network conditions.
+     */
     val peers: List<Peer>,
 ): Parcelable

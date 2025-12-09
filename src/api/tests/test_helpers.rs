@@ -58,7 +58,7 @@ impl StateChangedCallback for TestStateChangedCallback {
 
 pub(crate) struct ConnectionTestHelper {
     pub(crate) buf: Box<Vec<u8>>,
-    pub(crate) tun_socket: std::net::UdpSocket,
+    pub(crate) tun_socket: Option<std::net::UdpSocket>,
     pub(crate) state_updated_receiver: Receiver<State>,
     pub(crate) connection: Connection,
     pub(crate) join_handle: JoinHandle<()>,
@@ -75,11 +75,11 @@ impl ConnectionTestHelper {
     }
 
     pub(crate) fn send_to_tun(&mut self, packet: &DummyProtocolPacket) -> io::Result<usize> {
-        Ok(self.tun_socket.send(&packet.serialize())?)
+        Ok(self.tun_socket.as_ref().unwrap().send(&packet.serialize())?)
     }
 
     pub(crate) fn recv_from_tun(&mut self) -> io::Result<DummyProtocolPacket> {
-        let (bytes_read, _) = self.tun_socket.recv_from(&mut self.buf[..])?;
+        let (bytes_read, _) = self.tun_socket.as_ref().unwrap().recv_from(&mut self.buf[..])?;
         Ok(bincode::deserialize(&self.buf[..bytes_read]).unwrap())
     }
 
@@ -173,7 +173,7 @@ pub(crate) fn prepare_connection_test(
 
     ConnectionTestHelper {
         buf: Box::new(vec![0u8; 4096]),
-        tun_socket,
+        tun_socket: Some(tun_socket),
         state_updated_receiver,
         connection,
         join_handle,

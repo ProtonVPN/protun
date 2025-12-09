@@ -26,8 +26,7 @@ import me.proton.vpn.sdk.api.InterfaceConfig
 import me.proton.vpn.sdk.api.IpNetworkPrefix
 import me.proton.vpn.sdk.api.SplitTunnelAppsConfig
 import me.proton.vpn.sdk.api.SplitTunnelMode
-import me.proton.vpn.sdk.api.VpnConnectionState
-import me.proton.vpn.sdk.api.VpnErrorKind
+import me.proton.vpn.sdk.api.VpnDisconnectError
 
 private const val TUNNEL_CLIENT_IP_V4 = "10.2.0.2"
 private const val TUNNEL_SERVER_IP_V4 = "10.2.0.1"
@@ -42,7 +41,7 @@ internal fun interface EstablishTun {
 
     sealed interface Result {
         data class Success(val fd: ParcelFileDescriptor) : Result
-        data class Failure(val errorState: VpnConnectionState.Error) : Result
+        data class Failure(val reason: VpnDisconnectError) : Result
     }
 
     operator fun invoke(
@@ -70,27 +69,25 @@ internal class EstablishTunImpl : EstablishTun {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q)
             builder.setMetered(false)
 
-        fun failure(kind: VpnErrorKind, message: String?) =
-            EstablishTun.Result.Failure(VpnConnectionState.Error(kind, message, isFinal = true))
-
+        fun tunFailure(reason: String?) =
+            EstablishTun.Result.Failure(VpnDisconnectError.TunInterfaceError(reason))
         return try {
             val fd = builder.establish()
             if (fd == null)
-                EstablishTun.Result.Failure(
-                    VpnConnectionState.Error(VpnErrorKind.VpnPermissionError, "Missing VPN permission", isFinal = true)
-                )
+                EstablishTun.Result.Failure(VpnDisconnectError.VpnPermissionMissing)
             else
                 EstablishTun.Result.Success(fd)
         } catch (e: SecurityException) {
-            val (kind, message) = if (e.message?.contains("INTERACT_ACROSS_USERS") == true)
-                VpnErrorKind.InteractAcrossUsersError to "VPN service conflict in multi-user system. Try disabling split tunneling."
-            else
-                VpnErrorKind.TunInterfaceError to e.message
-            failure(kind, message)
+            EstablishTun.Result.Failure(
+                if (e.message?.contains("INTERACT_ACROSS_USERS") == true)
+                    VpnDisconnectError.InteractAcrossUsers
+                else
+                    VpnDisconnectError.TunInterfaceError(e.localizedMessage)
+            )
         } catch (e: IllegalArgumentException) {
-            failure(VpnErrorKind.TunInterfaceError, e.message)
+            tunFailure(e.localizedMessage)
         } catch (e: IllegalStateException) {
-            failure(VpnErrorKind.TunInterfaceError, e.message)
+            tunFailure(e.localizedMessage)
         }
     }
 

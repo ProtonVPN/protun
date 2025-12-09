@@ -23,34 +23,50 @@ import android.os.Parcelable
 import kotlinx.parcelize.Parcelize
 import java.net.InetAddress
 
-// VPN peer (server) to connect to.
+/**
+ * VPN peer (server) to connect to.
+ */
 @Parcelize
 data class Peer(
 
-    // IP address of the peer.
+    /**
+     * IP address of the peer.
+     */
     val address: InetAddress,
 
-    // Allowed VPN protocols and their respective ports to be used for connection.
+    /**
+     * Allowed VPN protocols and their respective ports to be used for connection.
+     */
     val ports: Map<VpnProtocol, List<Int>>,
 
-    // 32 bytes base64-encoded X25519 public key of the peer.
+    /**
+     * 32 bytes base64-encoded X25519 public key of the peer.
+     */
     val publicKeyX25519Base64: String,
 
-    // Lower value means higher priority.
+    /**
+     * Lower value means higher priority.
+     */
     val priority: Int,
 
-    // Client-defined identifier for the peer.
+    /**
+     * Client-defined identifier for the peer.
+     */
     val id: String,
 ): Parcelable
 
 @Parcelize
 enum class VpnProtocol : Parcelable {
 
-    // Regular WireGuard appropriate for most networks
+    /**
+     * Regular WireGuard appropriate for most networks.
+     */
     WireGuardUdp,
 
-    // Protocols designed to work in restricted networks, slower and less reliable in
-    // normal conditions
+    /**
+     * Protocols designed to work in restricted networks, slower and less reliable in
+     * normal conditions.
+     */
     WireGuardTcp,
     Stealth
 }

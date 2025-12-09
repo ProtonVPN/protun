@@ -28,6 +28,7 @@ import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
+import me.proton.vpn.sdk.api.PeerConnection
 import me.proton.vpn.sdk.api.ProtonVpnConnectionManager
 import me.proton.vpn.sdk.api.VpnConnectionState
 import me.proton.vpn.sdk.sample_app.data.ConfigStore
@@ -52,8 +53,15 @@ class MainViewModel @Inject constructor(
                 else -> ButtonType.Disconnect
             }
             val stateLabel = when (state) {
-                is VpnConnectionState.Error -> "Error ${state.kind}: ${state.message}"
-                else -> state.javaClass.simpleName
+                VpnConnectionState.Loading -> ""
+                is VpnConnectionState.Connected -> "Connected: ${state.connection.toDisplay()}"
+                is VpnConnectionState.Connecting -> "Connecting..."
+                is VpnConnectionState.WaitingForAction -> "Waiting for action: ${state.reason}"
+                is VpnConnectionState.Disconnected -> if (state.error != null) {
+                    "Disconnected: ${state.error}"
+                } else {
+                    "Disconnected"
+                }
             }
             UiState(
                 stateLabel = stateLabel,
@@ -111,3 +119,6 @@ data class UiState(
 sealed interface Event {
     data class ConnectionError(val message: String) : Event
 }
+
+private fun PeerConnection.toDisplay() =
+    "${entryAddr.hostString.removePrefix("/")} $protocol id=$id"

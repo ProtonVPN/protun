@@ -21,64 +21,79 @@ package me.proton.vpn.sdk.api
 
 import android.os.Parcelable
 import kotlinx.parcelize.Parcelize
+import java.net.InetSocketAddress
 import java.net.SocketAddress
 import java.util.Date
 
 @Parcelize
 sealed interface VpnConnectionState : Parcelable {
 
-    // VPN state is being loaded (VPN service might be running and connected but this information
-    // is being collected)
+    /**
+     * VPN state is being loaded (VPN service might be running and connected but this information
+     * is being collected)
+     */
     data object Loading: VpnConnectionState
 
-    data object Disconnected: VpnConnectionState
-
-    // Waiting for connectivity in underlying network.
-    data object WaitingForNetwork: VpnConnectionState
+    data class Disconnected(
+        /** != null if the disconnection was due to an error */
+        val error: VpnDisconnectError? = null
+    ): VpnConnectionState
 
     data class Connecting(
         val connections: List<PeerConnection>
+    ): VpnConnectionState
+
+    /**
+     * Connection attempt requires app, user or system action to proceed.
+     */
+    data class WaitingForAction(
+        val reason: VpnWaitReason
     ): VpnConnectionState
 
     data class Connected(
         val connection: PeerConnection,
         val connectedSince: Date
     ): VpnConnectionState
-
-    data class Error(
-        val kind: VpnErrorKind,
-        val message: String?,
-
-        // true if this is a final error that SDK won't be able to recover from on its own.
-        // when false, SDK will keep trying to find reachable peer and reconnect.
-        val isFinal: Boolean,
-    ): VpnConnectionState
 }
 
-enum class VpnErrorKind {
+@Parcelize
+sealed interface VpnWaitReason : Parcelable {
 
-    // System failure establishing VPN connection involving multiple user profiles (or Dual Messenger).
-    // On some Android devices setting up split tunneling can cause this error in multi-user scenarios.
-    InteractAcrossUsersError,
+    /**
+     * Device currently has no network (airplane mode, no signal, etc.)
+     */
+    object WaitingForNetwork : VpnWaitReason
+}
 
-    // Library can't establish/maintain connection to any of the peers due to either poor network
-    // conditions or active blocking.
-    PeersUnreachable,
+@Parcelize
+sealed interface VpnDisconnectError : Parcelable {
 
-    // Android's VpnService error. See message for details.
-    ServiceError,
+    /**
+     * System failure establishing VPN connection involving multiple user profiles (or Dual Messenger).
+     * On some Android devices setting up split tunneling can cause this error in multi-user scenarios.
+     */
+    data object InteractAcrossUsers: VpnDisconnectError
 
-    // TUN interface couldn't be established or fails when reading/writing packets.
-    TunInterfaceError,
+    /**
+     * Android's VpnService error. See message for details.
+     */
+    data class ServiceError(val message: String): VpnDisconnectError
 
-    // VPN permission was not granted by the user. Make sure to request VPN permission before
-    // attempting to connect.
-    VpnPermissionError,
+    /**
+     * TUN interface couldn't be established or fails when reading/writing packets.
+     */
+    data class TunInterfaceError(val message: String?): VpnDisconnectError
+
+    /**
+     * VPN permission was not granted by the user. Make sure to request VPN permission before
+     * attempting to connect.
+     */
+    data object VpnPermissionMissing: VpnDisconnectError
 }
 
 @Parcelize
 data class PeerConnection(
     val protocol: VpnProtocol,
     val id: String,
-    val entryAddr: SocketAddress,
+    val entryAddr: InetSocketAddress,
 ): Parcelable

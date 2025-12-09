@@ -34,7 +34,7 @@ import me.proton.vpn.sdk.api.Peer
 import me.proton.vpn.sdk.api.ProtonVpnConnectionManager
 import me.proton.vpn.sdk.api.VpnConnectionState
 import me.proton.vpn.sdk.api.VpnConnectionStateListener
-import me.proton.vpn.sdk.api.VpnErrorKind
+import me.proton.vpn.sdk.api.VpnDisconnectError
 import me.proton.vpn.sdk.service.ProTunVpnService
 import me.proton.vpn.sdk.service.ProTunVpnServiceBinder
 import me.proton.vpn.sdk.service.ProTunVpnServiceCallback
@@ -49,7 +49,7 @@ internal class ProtonVpnConnectionManagerImpl(
     private val stateListeners = CopyOnWriteArrayList<VpnConnectionStateListener>()
 
     private var bound = false
-    private val _state = MutableStateFlow<VpnConnectionState>(VpnConnectionState.Disconnected)
+    private val _state = MutableStateFlow<VpnConnectionState>(VpnConnectionState.Disconnected())
     override val state: StateFlow<VpnConnectionState> = _state
 
     init {
@@ -78,7 +78,7 @@ internal class ProtonVpnConnectionManagerImpl(
 
             override fun onServiceDisconnected(name: ComponentName) {
                 serviceBinder?.unregisterCallback(callback)
-                setState(VpnConnectionState.Disconnected)
+                setState(VpnConnectionState.Disconnected())
             }
         }
     }
@@ -94,11 +94,9 @@ internal class ProtonVpnConnectionManagerImpl(
             }
             if (!bound) {
                 context.unbindService(serviceConnection)
-                setState(VpnConnectionState.Error(
-                    VpnErrorKind.ServiceError,
-                    "Failed to bind to VPN service",
-                    isFinal = true
-                ))
+                setState(VpnConnectionState.Disconnected(
+                    VpnDisconnectError.ServiceError("Failed to bind to VPN service"))
+                )
             } else {
                 sendAction(ProTunVpnService.VpnAction.Connect(config))
             }
@@ -128,7 +126,7 @@ internal class ProtonVpnConnectionManagerImpl(
             sendAction(ProTunVpnService.VpnAction.Disconnect)
             context.unbindService(serviceConnection)
             bound = false
-            setState(VpnConnectionState.Disconnected)
+            setState(VpnConnectionState.Disconnected())
         }
     }
 

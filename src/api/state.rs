@@ -22,13 +22,23 @@ use local_agent_rs::StatusMessage;
 #[cfg_attr(feature = "uniffi", derive(uniffi::Enum))]
 #[derive(Debug)]
 pub enum State {
-    Disconnected,
-    WaitingForNetwork,
 
-    /// Connecting to VPN server or to local agent.
-    Connecting { peers: Vec<PeerConnectionInfo>, error: Option<VpnConnectingError> },
+    /// Disconnected. [error] will be set if disconnection happened due to an error.
+    Disconnected {
+        error: Option<DisconnectReason>
+    },
 
-    /// Status message is None if connection was established without local agent.
+    /// Library is attempting VPN connection to one or more candidate peers.
+    Connecting {
+        peers: Vec<PeerConnectionInfo>,
+    },
+
+    /// Library connection attempt requires app, user or system action to proceed.
+    WaitingForAction {
+        reason: WaitReason
+    },
+
+    /// Connection to [peer] is established.
     Connected {
         peer: PeerConnectionInfo,
         #[cfg(feature = "local-agent")]
@@ -38,6 +48,26 @@ pub enum State {
     /// Connected with VPN server, but hard-jailed by local agent.
     #[cfg(feature = "local-agent")]
     HardJailed { peer: PeerConnectionInfo, status: StatusMessage },
+}
+
+#[cfg_attr(feature = "uniffi", derive(uniffi::Enum))]
+#[derive(Clone, Debug, PartialEq)]
+pub enum WaitReason {
+
+    /// Device currently has no network (airplane mode, no signal, etc.)
+    WaitingForNetwork,
+
+    /// There is I/O problem with TUN interface. Calling code might need to wait, recreate TUN or
+    /// disconnect (when it was caused by connection by another VPN app).
+    TunIoError { message: String },
+}
+
+#[cfg_attr(feature = "uniffi", derive(uniffi::Enum))]
+#[derive(Clone, Debug, PartialEq)]
+pub enum DisconnectReason {
+
+    /// There was a problem establishing TUN interface.
+    TunEstablishError { message: String },
 }
 
 #[cfg_attr(feature = "uniffi", derive(uniffi::Record))]
@@ -53,13 +83,4 @@ pub struct PeerConnectionInfo {
 #[derive(Debug, Copy, Clone, PartialEq)]
 pub enum Protocol {
     WireguardUdp, WireguardTcp, Stealth,
-}
-
-#[cfg_attr(feature = "uniffi", derive(uniffi::Enum))]
-#[derive(Clone, PartialEq, Debug)]
-pub enum VpnConnectingError {
-    /// Tun device i/o error.
-    TunIoError { message: String },
-    /// Library is struggling to connect to a peer.
-    PeerUnreachable,
 }

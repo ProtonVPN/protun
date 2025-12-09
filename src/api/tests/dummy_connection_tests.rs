@@ -18,12 +18,14 @@
 use std::{thread, time::Duration};
 
 use crate::{api::{
-    connection::{PrivateKeyUpdateInfo, WgClientPrivateKey}, state::{PeerConnectionInfo, Protocol, State}, tests::{
+    connection::{PrivateKeyUpdateInfo, WgClientPrivateKey},
+    state::{PeerConnectionInfo, Protocol, State, WaitReason},
+    tests::{
         dummy_protocol::DummyProtocolPacket,
         test_helpers::{
             create_tcp_peer, create_udp_peer, prepare_connection_test
         },
-    }
+    },
 }, connection::util::epoch_now_ns};
 
 /// Set of integration tests using:
@@ -51,7 +53,7 @@ fn happy_path_udp_connection() {
     assert!(matches!(handshake, DummyProtocolPacket::Handshake(_, key) if key == client_private_key.to_vec()));
     helper.expect_state(|state| matches!(
         state,
-        State::Connecting { peers, error: None } if peers == &vec![expected_peer.clone()]
+        State::Connecting { peers } if peers == &vec![expected_peer.clone()]
     ));
 
     // send handshake response to client and expect "connected" state
@@ -72,7 +74,7 @@ fn happy_path_udp_connection() {
 
     // disconnect and make sure connection thread ends
     helper.connection.disconnect();
-    helper.expect_state(|state| matches!(state, State::Disconnected));
+    helper.expect_state(|state| matches!(state, State::Disconnected { error: None }));
     helper.join_handle.join().unwrap();
 }
 
@@ -95,7 +97,7 @@ fn happy_path_tcp_connection() {
     };
     helper.expect_state(|state| matches!(
         state,
-        State::Connecting { peers, error: None } if peers == &vec![expected_peer.clone()]
+        State::Connecting { peers } if peers == &vec![expected_peer.clone()]
     ));
 
     // send handshake response to client and expect connected state
@@ -116,7 +118,7 @@ fn happy_path_tcp_connection() {
 
     // disconnect and join
     helper.connection.disconnect();
-    helper.expect_state(|state| matches!(state, State::Disconnected));
+    helper.expect_state(|state| matches!(state, State::Disconnected { .. }));
     helper.join_handle.join().unwrap();
 }
 
@@ -155,7 +157,7 @@ fn connect_waiting_for_network() {
     let mut helper = prepare_connection_test(vec![udp_server_peer], client_private_key, false);
 
     thread::sleep(Duration::from_millis(5));
-    helper.expect_state(|state| matches!(state, State::WaitingForNetwork));
+    helper.expect_state(|state| matches!(state, State::WaitingForAction { reason: WaitReason::WaitingForNetwork }));
 
     // Make network available and expect handshake from client that was initiated after network became available
     let before_network_available_ts = epoch_now_ns();
@@ -178,7 +180,10 @@ fn pause_and_resume_network_while_connected() {
     let client_addr1 = helper.accept_and_verify_udp_connection(&udp_server_socket);
 
     helper.connection.on_set_network_available(false);
-    helper.expect_state(|state| matches!(state, State::WaitingForNetwork));
+    helper.expect_state(|state| matches!(
+        state,
+        State::WaitingForAction { reason: WaitReason::WaitingForNetwork }
+    ));
 
     helper.connection.on_set_network_available(true);
     let client_addr2 = helper.accept_and_verify_udp_connection(&udp_server_socket);
