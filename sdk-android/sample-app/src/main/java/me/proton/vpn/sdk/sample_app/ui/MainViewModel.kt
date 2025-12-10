@@ -121,4 +121,4 @@ sealed interface Event {
 }
 
 private fun PeerConnection.toDisplay() =
-    "${entryAddr.hostString.removePrefix("/")} $protocol id=$id"
+    "${entryAddr.toString().removePrefix("/")} $protocol id=$id"
