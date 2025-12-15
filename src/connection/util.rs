@@ -16,27 +16,20 @@
 // along with ProtonVPN.  If not, see <https://www.gnu.org/licenses/>.
 
 use std::{io::ErrorKind, net::IpAddr, num::NonZeroU16};
-use pvpnclient::pvpnclient::{NanoSecTimestamp, Peer, PeerAddr, SocketErr};
+use pvpnclient::{os_interface::error::SystemError, peer::{Peer, PeerAddr}};
 use crate::api::connection::PeerInfo;
 
-pub(crate) fn epoch_now_ns() -> NanoSecTimestamp {
-    std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .unwrap()
-        .as_nanos() as u64
-}
-
-pub(crate) fn error_kind_to_socket_err(error_kind: ErrorKind) -> SocketErr {
+pub(crate) fn error_kind_to_socket_err(error_kind: ErrorKind) -> SystemError {
     match error_kind {
-        ErrorKind::ConnectionRefused => SocketErr::ConnectionRefused,
-        ErrorKind::TimedOut => SocketErr::Timeout,
-        ErrorKind::HostUnreachable => SocketErr::HostUnreachable,
-        ErrorKind::NetworkUnreachable => SocketErr::NetworkUnreachable,
-        ErrorKind::AddrInUse => SocketErr::AddressInUse,
-        ErrorKind::ConnectionAborted => SocketErr::ConnectionAborted,
-        ErrorKind::ConnectionReset => SocketErr::ConnectionReset,
-        ErrorKind::NotConnected => SocketErr::NotConnected,
-        _ => SocketErr::Unknown,
+        ErrorKind::ConnectionRefused => SystemError::ConnectionRefused,
+        ErrorKind::TimedOut => SystemError::Timeout,
+        ErrorKind::HostUnreachable => SystemError::HostUnreachable,
+        ErrorKind::NetworkUnreachable => SystemError::NetworkUnreachable,
+        ErrorKind::AddrInUse => SystemError::AddressInUse,
+        ErrorKind::ConnectionAborted => SystemError::ConnectionAborted,
+        ErrorKind::ConnectionReset => SystemError::ConnectionReset,
+        ErrorKind::NotConnected => SystemError::NotConnected,
+        _ => SystemError::Unknown(None),
     }
 }
 

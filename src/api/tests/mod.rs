@@ -17,5 +17,6 @@
 
 mod dummy_protocol;
 mod test_helpers;
+mod test_clocks;
 
 mod dummy_connection_tests;

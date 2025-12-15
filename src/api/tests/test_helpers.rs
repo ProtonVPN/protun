@@ -38,9 +38,9 @@ use crate::{
             streams::{MioStream, MioStreams},
             udp::UdpSocketStream,
         },
-        util::epoch_now_ns,
     },
 };
+use super::test_clocks::{TestMonotonicClock, TestRealtimeClock};
 
 pub(crate) struct TestStateChangedCallback {
     on_state_updated: mpsc::Sender<State>,
@@ -62,6 +62,8 @@ pub(crate) struct ConnectionTestHelper {
     pub(crate) state_updated_receiver: Receiver<State>,
     pub(crate) connection: Connection,
     pub(crate) join_handle: JoinHandle<()>,
+    pub(crate) monotonic_clock: TestMonotonicClock,
+    pub(crate) realtime_clock: TestRealtimeClock,
 }
 impl ConnectionTestHelper {
     pub(crate) fn recv_udp(&mut self, socket: &std::net::UdpSocket) -> io::Result<(DummyProtocolPacket, SocketAddr)> {
@@ -147,6 +149,11 @@ pub(crate) fn prepare_connection_test(
     tun_socket.connect(client_tun_socket_addr).unwrap();
     let tun_socket_addr = tun_socket.local_addr().unwrap();
 
+    let monotonic_clock = TestMonotonicClock::new();
+    let realtime_clock = TestRealtimeClock::new();
+    let monotonic_clock_clone = monotonic_clock.clone();
+    let realtime_clock_clone = realtime_clock.clone();
+
     // Launch connection loop
     let socket_factory = Box::new(SocketFactoryUnix::new(None));
     let (poll, waker) =
@@ -165,10 +172,9 @@ pub(crate) fn prepare_connection_test(
                 .expect("Failed to create mio streams");
             Box::new(streams)
         },
-        move || Box::new(DummyPvpnClient::new(epoch_now_ns())),
+        move || Box::new(DummyPvpnClient::new(monotonic_clock_clone, realtime_clock_clone)),
         Arc::new(TestStateChangedCallback::new(state_updated_sender)),
         config,
-        epoch_now_ns,
     );
 
     ConnectionTestHelper {
@@ -177,6 +183,8 @@ pub(crate) fn prepare_connection_test(
         state_updated_receiver,
         connection,
         join_handle,
+        monotonic_clock,
+        realtime_clock,
     }
 }
 

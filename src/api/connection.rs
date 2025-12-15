@@ -80,7 +80,6 @@ impl Connection {
         create_client: impl FnOnce() -> Box<dyn PvpnClient> + Send + 'static,
         state_change_callback: Arc<dyn StateChangedCallback>,
         config: InitialConnectionConfig,
-        now: fn() -> u64,
     ) -> (Self, JoinHandle<()>) {
         #[cfg(not(feature = "local-agent"))]
         // When local agent is not enabled just translate pvpn state to api state.
@@ -97,7 +96,6 @@ impl Connection {
             create_client,
             pvpn_state_change_callback,
             config,
-            now,
         );
         (Self {
             send_pvpn_message,

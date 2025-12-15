@@ -17,7 +17,7 @@
 
 use std::{net::IpAddr, str::FromStr};
 
-use pvpnclient::pvpnclient::{WireguardPrivateKey, WireguardPublicKey};
+use pvpnclient::vpn::{WireguardPublicKey, WireguardPrivateKey};
 
 use crate::api::connection::{CLIENT_PRIV_KEY_SIZE_BYTES, PEER_PUB_KEY_SIZE_BYTES, IpAddress, WgClientPrivateKey, WgPeerPublicKey};
 

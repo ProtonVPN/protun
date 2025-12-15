@@ -26,7 +26,7 @@ use crate::{api::{
             create_tcp_peer, create_udp_peer, prepare_connection_test
         },
     },
-}, connection::util::epoch_now_ns};
+}};
 
 /// Set of integration tests using:
 /// - Real [Streams], [Connection] and [PvpnConnection] under test
@@ -160,7 +160,7 @@ fn connect_waiting_for_network() {
     helper.expect_state(|state| matches!(state, State::WaitingForAction { reason: WaitReason::WaitingForNetwork }));
 
     // Make network available and expect handshake from client that was initiated after network became available
-    let before_network_available_ts = epoch_now_ns();
+    let before_network_available_ts = helper.realtime_clock.now_nanos();
     helper.connection.on_set_network_available(true);
     let (handshake, client_addr) = helper.recv_udp(&udp_server_socket).unwrap();
     assert!(matches!(handshake, DummyProtocolPacket::Handshake(timestamp, _) if timestamp >= before_network_available_ts));

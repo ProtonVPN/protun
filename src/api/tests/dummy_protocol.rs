@@ -15,12 +15,16 @@
 // You should have received a copy of the GNU General Public License
 // along with ProtonVPN.  If not, see <https://www.gnu.org/licenses/>.
 
-use std::{collections::VecDeque, net::SocketAddr, num::NonZero};
-
-use pvpnclient::pvpnclient::{pfff::os::time::Instant, Action, ActionKind, Deadline, OpenStream, Peer, PeerAddr, StreamId, TunnelInfo, VpnProtocol, WireguardPrivateKey};
+use std::{collections::VecDeque, net::SocketAddr, num::NonZero, time::Duration};
+use pvpnclient::{Action, ActionKind, Deadline, StreamId, TunnelInfo};
+use pvpnclient::action::OpenStream;
+use pvpnclient::os_interface::time::{SinceUnixEpoch, SystemTime};
+use pvpnclient::peer::{Peer, PeerAddr};
+use pvpnclient::vpn::{VpnProtocol, WireguardPrivateKey};
 use serde::{Serialize, Deserialize};
 
 use crate::connection::{pvpn_client::PvpnClient, util::error_kind_to_socket_err};
+use super::test_clocks::{TestMonotonicClock, TestRealtimeClock};
 
 /// Fake [PvpnClient] implementing dummy protocol for integration testing.
 /// - [DummyProtocolPacket]s are exchanged between TUN and server sockets.
@@ -31,7 +35,7 @@ use crate::connection::{pvpn_client::PvpnClient, util::error_kind_to_socket_err}
 
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
 pub(crate) enum DummyProtocolPacket {
-    Handshake(u64, Vec<u8>),
+    Handshake(i64, Vec<u8>),
     HandshakeResponse,
     Data(Vec<u8>),
 }
@@ -66,12 +70,13 @@ pub(crate) enum ConnectionState {
     Disconnected,
     WaitingForTcpConnection,
     WaitingForHandshake,
-    Connected(Instant)
+    Connected(SystemTime)
 }
 
 pub(crate) struct DummyPvpnClient {
     private_key: Option<WireguardPrivateKey>,
-    time_ns: u64,
+    monotonic_clock: TestMonotonicClock,
+    realtime_clock: TestRealtimeClock,
     peers: Vec<Peer>,
     actions: VecDeque<Action>,
     current_connection: Option<(StreamId, Peer, ConnectionInfo)>,
@@ -80,10 +85,11 @@ pub(crate) struct DummyPvpnClient {
     failed_connections: Vec<ConnectionInfo>,
 }
 impl DummyPvpnClient {
-    pub(crate) fn new(now: u64) -> Self {
+    pub(crate) fn new(monotonic_clock: TestMonotonicClock, realtime_clock: TestRealtimeClock) -> Self {
         Self {
             private_key: None,
-            time_ns: now,
+            monotonic_clock,
+            realtime_clock,
             peers: Vec::new(),
             actions: VecDeque::new(),
             current_connection: None,
@@ -91,6 +97,14 @@ impl DummyPvpnClient {
             connection_state: ConnectionState::Disconnected,
             failed_connections: Vec::new(),
         }
+    }
+
+    pub(crate) fn monotonic_clock(&self) -> &TestMonotonicClock {
+       &self.monotonic_clock
+    }
+
+    pub(crate) fn realtime_clock(&self) -> &TestRealtimeClock {
+       &self.realtime_clock
     }
 
     fn maybe_connect(&mut self) {
@@ -108,7 +122,7 @@ impl DummyPvpnClient {
                         self.connection_state = ConnectionState::WaitingForHandshake;
                         self.actions.push_back(Action::mock_open(stream_id, OpenStream::mock_open_udp(socket_addr)));
                         let handshake = &DummyProtocolPacket::Handshake(
-                            self.time_ns,
+                            self.realtime_clock.now_nanos(),
                             self.private_key.as_ref().unwrap().key.to_vec()
                         );
                         self.actions.push_back(Action::mock_write(stream_id, DummyProtocolPacket::serialize(handshake)));
@@ -159,8 +173,12 @@ impl PvpnClient for DummyPvpnClient {
         self.reset_current_connection();
     }
     
-    fn set_time(&mut self, time_ns: u64) {
-        self.time_ns = time_ns;
+    fn set_current_time(&mut self) {
+        let real_time = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_nanos() as i64;
+        self.realtime_clock.set_nanos(real_time);
     }
 
     fn need_pull(&self) -> bool {
@@ -209,7 +227,9 @@ impl PvpnClient for DummyPvpnClient {
                         }
                     },
                     DummyProtocolPacket::HandshakeResponse => {
-                        self.connection_state = ConnectionState::Connected(self.time_ns.into());
+                        self.connection_state = ConnectionState::Connected(
+                            SystemTime::since_unix_epoch(Duration::from_nanos(self.realtime_clock.now_nanos() as u64))
+                        );
                     }
                     DummyProtocolPacket::Handshake(_, _) => {
                         panic!("unexpected hanshake")
@@ -228,7 +248,7 @@ impl PvpnClient for DummyPvpnClient {
                     if tcp_protocol && self.connection_state == ConnectionState::WaitingForTcpConnection {
                         self.connection_state = ConnectionState::WaitingForHandshake;
                         let handshake = DummyProtocolPacket::serialize(&DummyProtocolPacket::Handshake(
-                            self.time_ns,
+                            self.realtime_clock.now_nanos(),
                             self.private_key.as_ref().unwrap().key.to_vec(),
                         ));
                         self.actions.push_back(Action::mock_write(peer_stream_id.clone(), handshake));

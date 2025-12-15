@@ -17,7 +17,8 @@
 
 use std::io;
 use std::net::SocketAddr;
-use pvpnclient::pvpnclient::{Deadline, SocketOption, StreamId};
+use pvpnclient::{Deadline, StreamId};
+use pvpnclient::action::SocketOption;
 
 #[cfg(feature = "mio")]
 use crate::connection::CreateTunStream;

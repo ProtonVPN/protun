@@ -20,7 +20,7 @@ use std::io::{self, Read, Write};
 use std::net::Shutdown;
 use mio::event;
 use mio::net::TcpStream;
-use pvpnclient::pvpnclient::SocketOption;
+use pvpnclient::action::SocketOption;
 
 use crate::connection::mio::streams::MioStream;
 use crate::connection::streams::{Stream, StreamResult};

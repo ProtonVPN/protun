@@ -17,7 +17,10 @@
 
 use std::{net::SocketAddr, sync::mpsc, thread::{self, JoinHandle}};
 
-use pvpnclient::pvpnclient::{Action, ActionKind, OpenStream, Peer, StreamId, TunnelInfo, VpnProtocol, VpnStreamKind};
+use pvpnclient::{Action, ActionKind, StreamId, TunnelInfo};
+use pvpnclient::action::OpenStream;
+use pvpnclient::peer::Peer;
+use pvpnclient::vpn::{VpnProtocol, VpnStreamKind};
 
 #[cfg(feature = "local-agent")]
 use crate::api::connection::PeerLocalAgentInfo;
@@ -70,7 +73,6 @@ pub(crate) fn start_pvpn_connection(
     create_client: impl FnOnce () -> Box<dyn PvpnClient> + Send + 'static,
     pvpn_state_change_callback: Box<dyn PvpnConnectionStateHandler + Send + 'static>,
     config: InitialConnectionConfig,
-    now: fn() -> u64,
 ) -> (SendPvpnMessage, JoinHandle<()>) {
     let (message_sender, message_receiver) = mpsc::channel();
     let join_handle = thread::spawn(move || {
@@ -83,8 +85,7 @@ pub(crate) fn start_pvpn_connection(
             message_receiver,
             config.network_available,
             config.peers,
-            config.wg_private_key,
-            now,
+            config.wg_private_key
         );
         connection.run();
     });
@@ -110,7 +111,6 @@ struct PvpnConnection {
     stream_read_buffer: Box<[u8; STREAM_BUFFER_SIZE]>,
     should_stop: bool,
     current_tun_error: Option<String>,
-    now: fn() -> u64,
 }
 impl PvpnConnection {
     fn new(
@@ -121,7 +121,6 @@ impl PvpnConnection {
         network_available: bool,
         peers: Vec<PeerInfo>,
         wg_private_key: WgClientPrivateKey,
-        now: fn() -> u64,
     ) -> Self {
         let mut ret = Self {
             client,
@@ -134,7 +133,6 @@ impl PvpnConnection {
             stream_read_buffer: Box::new([0; STREAM_BUFFER_SIZE]),
             should_stop: false,
             current_tun_error: None,
-            now,
         };
         ret.client.set_private_key(&wg_private_key.into());
         if ret.network_available {
@@ -147,7 +145,7 @@ impl PvpnConnection {
 
     fn run(&mut self) {
         while self.handle_messages() {
-            self.client.set_time((self.now)());
+            self.client.set_current_time();
             self.pull_from_client();
             self.update_state();
             self.poll_from_streams();
@@ -238,7 +236,7 @@ impl PvpnConnection {
     fn poll_from_streams(&mut self) {
         let deadline = self.client.wakeup_deadline();
         let poll_results = self.streams.poll(deadline);
-        self.client.set_time((self.now)());
+        self.client.set_current_time();
         match poll_results {
             Ok(poll_results) => {
                 for res in &poll_results {

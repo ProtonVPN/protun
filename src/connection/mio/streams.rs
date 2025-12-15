@@ -16,10 +16,9 @@
 // along with ProtonVPN.  If not, see <https://www.gnu.org/licenses/>.
 
 use std::{io, net::SocketAddr};
-
 use crate::connection::{streams::{PollResult, PollWaker, Stream, Streams}, CreateTunStream};
 use mio::{event, Events, Poll, Token, Waker};
-use pvpnclient::pvpnclient::{Deadline, StreamId};
+use pvpnclient::{Deadline, StreamId};
 
 const POLL_WAKER_TOKEN: Token = Token(0);
 const EVENTS_CAPACITY: usize = 512; // Safe value for max number of simultaneous streams

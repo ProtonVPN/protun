@@ -16,15 +16,20 @@
 // along with ProtonVPN.  If not, see <https://www.gnu.org/licenses/>.
 
 use std::io::ErrorKind;
-use pvpnclient::pvpnclient::{Deadline, Peer, PeerAddr, TunnelInfo, WireguardPrivateKey};
-use pvpnclient::pvpnclient::Client;
-use pvpnclient::pvpnclient::{Action, PvpnReturn, StreamId, Task};
+use pvpnclient::os_interface::rand::{Seed256};
+use pvpnclient::os_interface::time::{InstantFactory, SystemTimeFactory};
+use pvpnclient::vpn::{WireguardPrivateKey};
+use pvpnclient::{Deadline, TunnelInfo};
+use pvpnclient::Client;
+use pvpnclient::{Action, PvpnReturn, StreamId, Task};
+use pvpnclient::peer::{Peer, PeerAddr};
+use crate::connection::time::{ClientMonotonicFactory, ClientRealtimeFactory};
 use crate::connection::util::{error_kind_to_socket_err};
 
 /// Abstraction over [pvpnclient::pvpnclient::Client]
 pub trait PvpnClient {
     fn set_private_key(&mut self, private_key: &WireguardPrivateKey);
-    fn set_time(&mut self, time_ns: u64);
+    fn set_current_time(&mut self);
     fn need_pull(&self) -> bool;
     fn peer_add(&mut self, peer: Peer);
     fn peer_remove(&mut self, peer_addr: PeerAddr);
@@ -35,15 +40,31 @@ pub trait PvpnClient {
     fn wakeup_deadline(&self) -> Deadline;
     fn notify_network_change(&mut self);
 }
-
 pub(crate) struct PvpnClientImpl<'a> {
     c: Client<'a>,
     need_pull: bool,
-    wakeup_deadline: Deadline
+    wakeup_deadline: Deadline,
+    monotonic_factory: ClientMonotonicFactory,
+    realtime_factory: ClientRealtimeFactory,
 }
+
 impl <'a> PvpnClientImpl<'a> {
-    pub(crate) fn new(now: fn() -> u64) -> Self {
-        PvpnClientImpl { c: Client::new(now()), need_pull: true, wakeup_deadline: None }
+    pub(crate) fn new(
+        monotonic_factory: ClientMonotonicFactory,
+        realtime_factory: ClientRealtimeFactory,
+        seed: fn() -> Seed256
+    ) -> Self {
+        PvpnClientImpl {
+            c: Client::new::<ClientRealtimeFactory, ClientMonotonicFactory>(
+                monotonic_factory.now(),
+                realtime_factory.now(),
+                seed()
+            ),
+            need_pull: true,
+            wakeup_deadline: None,
+            monotonic_factory,
+            realtime_factory
+        }
     }
 
     fn handle_result<T>(&mut self, result: &PvpnReturn<T>) {
@@ -57,8 +78,11 @@ impl <'a> PvpnClient for PvpnClientImpl<'a> {
         self.handle_result(result);
     }
 
-    fn set_time(&mut self, time_ns: u64) {
-        let result = &self.c.set_time(time_ns);
+    fn set_current_time(&mut self) {
+        let result = &self.c.set_time::<ClientRealtimeFactory, ClientMonotonicFactory>(
+            self.monotonic_factory.now(),
+            self.realtime_factory.now()
+        );
         self.handle_result(result);
     }
 

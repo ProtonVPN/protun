@@ -15,9 +15,11 @@
 // You should have received a copy of the GNU General Public License
 // along with ProtonVPN.  If not, see <https://www.gnu.org/licenses/>.
 
+use pvpnclient::os_interface::rand::CryptoSeedProvider;
+use crate::connection::time::{ClientMonotonicFactory, ClientRealtimeFactory};
 use crate::{
     api::connection::{Connection, InitialConnectionConfig, StateChangedCallback},
-    connection::{mio::{socket_factory_unix::SocketFactoryUnix, streams::MioStreams, tun_unix::TunStreamUnix}, pvpn_client::PvpnClientImpl, pvpn_connection::PvpnMessage, util::epoch_now_ns},
+    connection::{mio::{socket_factory_unix::SocketFactoryUnix, streams::MioStreams, tun_unix::TunStreamUnix}, pvpn_client::PvpnClientImpl, pvpn_connection::PvpnMessage},
 };
 
 #[cfg_attr(feature = "uniffi", uniffi::export)]
@@ -41,10 +43,17 @@ impl Connection {
                 let streams = MioStreams::new(tun_stream, socket_factory, poll).expect("Failed to create mio streams");
                 Box::new(streams)
             },
-            move || Box::new(PvpnClientImpl::new(epoch_now_ns)),
+            move || {
+                Box::new(
+                    PvpnClientImpl::new(
+                        ClientMonotonicFactory::new(),
+                        ClientRealtimeFactory::new(),
+                        || CryptoSeedProvider::new(rand::rng()).into()
+                    )
+                )
+            },
             state_change_callback.into(),
             config,
-            epoch_now_ns,
         ).0
     }
 
