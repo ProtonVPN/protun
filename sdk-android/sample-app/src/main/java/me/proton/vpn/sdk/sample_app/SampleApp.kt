@@ -21,9 +21,14 @@ package me.proton.vpn.sdk.sample_app
 
 import android.app.Application
 import dagger.hilt.android.HiltAndroidApp
+import me.proton.vpn.sdk.api.ProtonVpnSdk
+import javax.inject.Inject
 
 @HiltAndroidApp
 class SampleApp : Application() {
+
+    // Trigger SDK initialization during onCreate
+    @Inject lateinit var sdk: ProtonVpnSdk
 
     override fun onCreate() {
         super.onCreate()

@@ -62,6 +62,8 @@ internal object DependencyContainer {
         _wallClockMs = wallClockMs
     }
 
+    val isInitialized get() = _appContext != null
+
     // Method to clear the dependencies to be used for test cleanup.
     @VisibleForTesting
     fun clear() {

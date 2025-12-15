@@ -25,6 +25,7 @@ import android.net.VpnService
 import android.os.Binder
 import android.os.Parcel
 import android.os.Parcelable
+import android.util.Log
 import me.proton.vpn.sdk.api.InitialConfig
 import me.proton.vpn.sdk.api.InterfaceConfig
 import me.proton.vpn.sdk.api.Logger
@@ -63,8 +64,16 @@ internal class ProTunVpnService : VpnService() {
 
     override fun onCreate() {
         super.onCreate()
+
+        if (!DependencyContainer.isInitialized) {
+            Log.e("ProtonVpnService", "SDK dependencies are not initialized. " +
+                    "Make sure ProtonVpnSdk.create() is called in Application.onCreate()")
+            stopSelf()
+            return
+        }
+
         logger.log(LogLevel.INFO, "ProTunVpnService onCreate")
-        socketProtectCallback = ProTunSocketProtectCallback(logger,WeakReference(this))
+        socketProtectCallback = ProTunSocketProtectCallback(logger, WeakReference(this))
         binder = ProTunVpnServiceBinder(logger, WeakReference(this))
         manager.init(serviceScope)
         manager.state.onEach {
@@ -75,16 +84,21 @@ internal class ProTunVpnService : VpnService() {
     override fun onBind(intent: Intent) = binder
 
     override fun onDestroy() {
-        logger.log(LogLevel.INFO, "ProTunVpnService onDestroy")
-        manager.clearConnection()
-        stopForeground(STOP_FOREGROUND_REMOVE)
-        binder?.weakService?.clear()
-        binder = null
-        serviceScope.cancel()
+        if (DependencyContainer.isInitialized) {
+            logger.log(LogLevel.INFO, "ProTunVpnService onDestroy")
+            manager.clearConnection()
+            stopForeground(STOP_FOREGROUND_REMOVE)
+            binder?.weakService?.clear()
+            binder = null
+            serviceScope.cancel()
+        }
         super.onDestroy()
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
+        if (!DependencyContainer.isInitialized)
+            return START_NOT_STICKY
+
         logger.log(LogLevel.INFO, "ProTunVpnService onStartCommand, intent: $intent, flags: $flags, startId: $startId")
         val startSticky = when {
             intent == null -> {
@@ -151,6 +165,9 @@ internal class ProTunVpnService : VpnService() {
 
     //TODO(VPNAND-2287): not called for some reason when another VPN takes over
     override fun onRevoke() {
+        if (!DependencyContainer.isInitialized)
+            return
+
         logger.log(LogLevel.INFO, "ProTunVpnService onRevoke")
         manager.clearConnection()
         // stopSelf without stopForeground will not destroy the service.

@@ -52,6 +52,7 @@ class ProtonVpnSdk private constructor(
          * Create and initialize the ProtonVPN SDK.
          * NOTE: this method needs to be called in Application's onCreate - otherwise VpnService
          *  launched automatically by the system will be missing required dependencies.
+         *  SDK-dependencies should be lightweight (e.g. via lazy) to avoid slowing-down app startup.
          *
          * @param context Application context
          * @param includeNativeLogs Whether to include logs from the rust layer. Set it to false if
