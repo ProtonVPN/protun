@@ -66,7 +66,14 @@ internal class ConnectionManager(
         val connection: Connection,
         val validatedNetworks: Set<Network>,
         val startedAt: Date,
-    )
+        val stateChangeCallback: ProTunStateChangedCallback,
+    ) {
+        fun clear() {
+            stateChangeCallback.clear()
+            connection.disconnect()
+            connection.destroy()
+        }
+    }
 
     private lateinit var serviceScope: CoroutineScope
     var activeConnection: ActiveConnection? = null
@@ -115,6 +122,7 @@ internal class ConnectionManager(
                 activeConnection = ActiveConnection(
                     connection = nativeConnection,
                     validatedNetworks = validatedNetworks,
+                    stateChangeCallback = stateChangeCallback,
                     startedAt = Date(wallClockMs()),
                 )
             }
@@ -125,10 +133,7 @@ internal class ConnectionManager(
     }
 
     fun clearConnection(endState: VpnConnectionState = VpnConnectionState.Disconnected()) {
-        activeConnection?.apply {
-            connection.disconnect()
-            connection.destroy()
-        }
+        activeConnection?.clear()
         activeConnection = null
         state.value = endState
     }
@@ -221,6 +226,10 @@ private fun DisconnectReason.toVpnDisconnectReason(): VpnDisconnectError = when 
 internal class ProTunStateChangedCallback(val weakManager: WeakReference<ConnectionManager>): StateChangedCallback {
     override fun onStateChanged(state: State) {
         weakManager.get()?.onProTunStateChange(state)
+    }
+
+    fun clear() {
+        weakManager.clear()
     }
 }
 
