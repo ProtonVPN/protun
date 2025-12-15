@@ -63,7 +63,7 @@ internal class EstablishTunImpl : EstablishTun {
             .setMtu(config.mtu)
             .setupAddresses(supportIPv6)
             .setupDns(supportIPv6, config.customDns)
-            .setupRoutes(config.routes)
+            .setupRoutes(supportIPv6, config.routes)
             .setupApps(config.splitTunnelAppsConfig)
 
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q)
@@ -107,7 +107,10 @@ internal class EstablishTunImpl : EstablishTun {
             addDnsServer(TUNNEL_PROTON_DNS_IP_V6)
     }
 
-    fun VpnService.Builder.setupRoutes(routes: List<IpNetworkPrefix>) = apply {
+    fun VpnService.Builder.setupRoutes(supportIPv6: Boolean, routes: List<IpNetworkPrefix>) = apply {
+        addRoute(TUNNEL_SERVER_IP_V4, 32)
+        if (supportIPv6)
+            addRoute(TUNNEL_SERVER_IP_V6, 128)
         routes.forEach { route ->
             addRoute(route.address, route.prefixLength)
         }
