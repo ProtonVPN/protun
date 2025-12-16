@@ -15,19 +15,23 @@
 // You should have received a copy of the GNU General Public License
 // along with ProtonVPN.  If not, see <https://www.gnu.org/licenses/>.
 
-#[cfg(feature = "unix")]
-pub(crate) mod socket_factory_unix;
+use mio::event;
+use mio::unix::SourceFd;
 
-#[cfg(feature = "unix")]
-mod tun_source;
+pub(crate) struct TunSourceFd {
+    pub(crate) fd: i32,
+}
 
-#[cfg(all(feature = "unix", not(feature = "apple")))]
-pub(crate) mod tun_unix;
+impl event::Source for TunSourceFd {
+    fn register(&mut self, registry: &mio::Registry, token: mio::Token, interests: mio::Interest) -> std::io::Result<()> {
+        SourceFd(&self.fd).register(registry, token, interests)
+    }
 
-#[cfg(feature = "apple")]
-pub(crate) mod tun_apple;
+    fn reregister(&mut self, registry: &mio::Registry, token: mio::Token, interests: mio::Interest) -> std::io::Result<()> {
+        SourceFd(&self.fd).reregister(registry, token, interests)
+    }
 
-pub(crate) mod streams;
-
-mod tcp;
-pub(crate) mod udp;
+    fn deregister(&mut self, registry: &mio::Registry) -> std::io::Result<()> {
+        SourceFd(&self.fd).deregister(registry)
+    }
+}

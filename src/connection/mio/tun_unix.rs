@@ -19,9 +19,9 @@ use std::fs::File;
 use std::io::{self, Read, Write};
 use std::os::fd::{FromRawFd, RawFd};
 use mio::event;
-use mio::unix::SourceFd;
 
 use crate::connection::mio::streams::MioStream;
+use crate::connection::mio::tun_source::TunSourceFd;
 use crate::connection::streams::{Stream, StreamResult};
 
 /// Unix-specific implementation of [MioStream] for the tun device.
@@ -87,23 +87,5 @@ impl Stream for TunStreamUnix {
     fn write_from_buffer(&mut self) -> StreamResult {
         //TODO: is buffer needed for tun?
         StreamResult::Ok { bytes_count: 0, would_block: false, pending_write: false }
-    }
-}
-
-struct TunSourceFd {
-    fd: i32,
-}
-
-impl event::Source for TunSourceFd {
-    fn register(&mut self, registry: &mio::Registry, token: mio::Token, interests: mio::Interest) -> std::io::Result<()> {
-        SourceFd(&self.fd).register(registry, token, interests)
-    }
-
-    fn reregister(&mut self, registry: &mio::Registry, token: mio::Token, interests: mio::Interest) -> std::io::Result<()> {
-        SourceFd(&self.fd).reregister(registry, token, interests)
-    }
-
-    fn deregister(&mut self, registry: &mio::Registry) -> std::io::Result<()> {
-        SourceFd(&self.fd).deregister(registry)
     }
 }

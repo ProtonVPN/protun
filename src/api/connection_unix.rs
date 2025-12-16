@@ -19,8 +19,14 @@ use pvpnclient::os_interface::rand::CryptoSeedProvider;
 use crate::connection::time::{ClientMonotonicFactory, ClientRealtimeFactory};
 use crate::{
     api::connection::{Connection, InitialConnectionConfig, StateChangedCallback},
-    connection::{mio::{socket_factory_unix::SocketFactoryUnix, streams::MioStreams, tun_unix::TunStreamUnix}, pvpn_client::PvpnClientImpl, pvpn_connection::PvpnMessage},
+    connection::{mio::{socket_factory_unix::SocketFactoryUnix, streams::MioStreams}, pvpn_client::PvpnClientImpl, pvpn_connection::PvpnMessage},
 };
+
+#[cfg(all(feature = "unix", not(feature = "apple")))]
+use crate::connection::mio::tun_unix::TunStreamUnix;
+
+#[cfg(feature = "apple")]
+use crate::connection::mio::tun_apple::TunStreamApple;
 
 #[cfg_attr(feature = "uniffi", uniffi::export)]
 impl Connection {
@@ -39,7 +45,12 @@ impl Connection {
         Self::connect_internal(
             Box::new(waker),
             move || {
+                #[cfg(all(feature = "unix", not(feature = "apple")))]
                 let tun_stream = Box::new(TunStreamUnix::new(tun_fd));
+
+                #[cfg(feature = "apple")]
+                let tun_stream = Box::new(TunStreamApple::new(tun_fd));
+
                 let streams = MioStreams::new(tun_stream, socket_factory, poll).expect("Failed to create mio streams");
                 Box::new(streams)
             },
@@ -60,7 +71,15 @@ impl Connection {
     /// Notifies library that file descriptor for tun device has changed.
     #[cfg_attr(feature = "uniffi", uniffi::method)]
     pub fn update_unix_tun(&self, tun_fd: i32) {
-        (self.send_pvpn_message)(PvpnMessage::UpdateTun(Box::new(move || Box::new(TunStreamUnix::new(tun_fd)))));
+        #[cfg(all(feature = "unix", not(feature = "apple")))]
+        (self.send_pvpn_message)(PvpnMessage::UpdateTun(
+            Box::new(move || Box::new(TunStreamUnix::new(tun_fd)))
+        ));
+
+        #[cfg(feature = "apple")]
+        (self.send_pvpn_message)(PvpnMessage::UpdateTun(
+            Box::new(move || Box::new(TunStreamApple::new(tun_fd)))
+        ));
     }
 }
 
