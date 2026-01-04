@@ -78,8 +78,8 @@ cargo {
 val generateUniFFIBindingsTask = tasks.register<Exec>("generateUniFFIBindings") {
     dependsOn += "cargoBuild"
     workingDir = file(rustCratePath)
-    commandLine = listOf(
-        "cargo", "run", "--features", "uniffi", "--$rustProfile", "--bin", "uniffi-bindgen",
+    commandLine = listOfNotNull(
+        "cargo", "run", "--features", "uniffi", if (rustProfile == "release") "--release" else null, "--bin", "uniffi-bindgen",
         "generate", "--library", "target/aarch64-linux-android/$rustProfile/lib${rustCrateName}.so",
         "--language", "kotlin", "--config", "$rustCratePath/uniffi.toml",
         "--out-dir", generatedUniffiDirectory.get().asFile.path

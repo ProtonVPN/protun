@@ -29,6 +29,9 @@ android {
                 "proguard-rules.pro"
             )
         }
+        debug {
+            packaging.jniLibs.keepDebugSymbols.add("**/*.so")
+        }
     }
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_17

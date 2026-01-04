@@ -15,8 +15,8 @@
 // You should have received a copy of the GNU General Public License
 // along with ProtonVPN.  If not, see <https://www.gnu.org/licenses/>.
 
-use std::{env, sync::RwLock};
-
+use std::{env, panic, sync::RwLock};
+use std::backtrace::Backtrace;
 use log::Log;
 
 static LOGGER: ProTunLogger = ProTunLogger;
@@ -33,6 +33,15 @@ pub fn init_logger(level: LogLevel, logger: Box<dyn ClientLogger>) {
         env::set_var("RUST_BACKTRACE", backtrace);
         MAX_LOG_LEVEL = level.clone().into();
     };
+    let previous_panic_hook = panic::take_hook();
+    panic::set_hook(Box::new(move |info| {
+        log::error!("Panic in rust:\n{info}");
+        if cfg!(debug_assertions) {
+            let backtrace = Backtrace::capture();
+            log::error!("Rust backtrace:\n{backtrace}");
+        }
+        previous_panic_hook(info);
+    }));
     CLIENT_LOGGER.write().unwrap().replace(logger);
     log::set_logger(&LOGGER).unwrap();
     let max_level = match level {

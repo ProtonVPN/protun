@@ -6,6 +6,12 @@ edition = "2024"
 [lib]
 crate-type = ["cdylib", "rlib"]
 
+[profile.release]
+panic = "abort"
+
+[profile.dev]
+panic = "abort"
+
 [dependencies]
 libc = { version = "0.2.174", optional = true }
 local-agent-rs = { path = "local-agent-rs/local_agent_rs", optional = true }
