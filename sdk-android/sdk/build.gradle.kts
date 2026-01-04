@@ -65,7 +65,7 @@ android {
 
 dependencies {
     implementation(sdkLibs.androidx.annotation)
-    implementation(sdkLibs.androidx.core)
+    implementation(sdkLibs.core.ktx)
     implementation(sdkLibs.coroutines.core)
     implementation(sdkLibs.coroutines.android)
     api(project(rustProviderModule))

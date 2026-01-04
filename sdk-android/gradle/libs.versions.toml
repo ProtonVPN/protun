@@ -20,7 +20,6 @@ compileSdk = "36"
 
 [libraries]
 androidx-annotation = { group = "androidx.annotation", name = "annotation", version = "1.9.1" }
-androidx-core = { group = "androidx.core", name = "core-ktx", version = "1.17.0" }
 coroutines-core = { group = "org.jetbrains.kotlinx", name = "kotlinx-coroutines-core", version.ref = "coroutines" }
 coroutines-android = { group = "org.jetbrains.kotlinx", name = "kotlinx-coroutines-android", version.ref = "coroutines" }
 hilt-android = { group = "com.google.dagger", name = "hilt-android" , version.ref = "hilt" }
