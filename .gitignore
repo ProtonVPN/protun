@@ -5,3 +5,4 @@ target/
 src/uniffi/
 .vscode/
 out/
+Cargo.lock
