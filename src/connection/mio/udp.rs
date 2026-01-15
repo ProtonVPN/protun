@@ -51,19 +51,20 @@ impl Stream for UdpSocketStream {
     }
 
     fn write(&mut self, data: Vec<u8>) -> StreamResult {
-        let mut bytes_written = 0;
-        while bytes_written < data.len() {
-            let ret = self.sock.send(&data[bytes_written..]);
-            match ret {
-                Ok(size) => bytes_written += size,
-                Err(e) => return if e.kind() == io::ErrorKind::WouldBlock {
-                    StreamResult::Ok { bytes_count: bytes_written, would_block: true, pending_write: true }
-                } else {
-                    StreamResult::Err(e)
+        let ret = self.sock.send(&data);
+        match ret {
+            Ok(size) => {
+                if size < data.len() {
+                    log::debug!("UDP send truncated: {} < {}", size, data.len());
                 }
+                StreamResult::Ok { bytes_count: size, would_block: false, pending_write: false }
+            }
+            Err(e) => if e.kind() == io::ErrorKind::WouldBlock {
+                StreamResult::Ok { bytes_count: 0, would_block: true, pending_write: false }
+            } else {
+                StreamResult::Err(e)
             }
         }
-        StreamResult::Ok { bytes_count: bytes_written, would_block: false, pending_write: false }
     }
 
     fn write_from_buffer(&mut self) -> StreamResult {
