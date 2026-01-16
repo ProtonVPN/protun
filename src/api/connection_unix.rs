@@ -22,11 +22,11 @@ use crate::{
     connection::{mio::{socket_factory_unix::SocketFactoryUnix, streams::MioStreams}, pvpn_client::PvpnClientImpl, pvpn_connection::PvpnMessage},
 };
 
-#[cfg(all(feature = "unix", not(feature = "apple")))]
-use crate::connection::mio::tun_unix::TunStreamUnix;
-
 #[cfg(feature = "apple")]
-use crate::connection::mio::tun_apple::TunStreamApple;
+type TunStreamUnixType = crate::connection::mio::tun_apple::TunStreamApple;
+
+#[cfg(all(feature = "unix", not(feature = "apple")))]
+type TunStreamUnixType = crate::connection::mio::tun_unix::TunStreamUnix;
 
 #[cfg_attr(feature = "uniffi", uniffi::export)]
 impl Connection {
@@ -45,12 +45,7 @@ impl Connection {
         Self::connect_internal(
             Box::new(waker),
             move || {
-                #[cfg(all(feature = "unix", not(feature = "apple")))]
-                let tun_stream = Box::new(TunStreamUnix::new(tun_fd));
-
-                #[cfg(feature = "apple")]
-                let tun_stream = Box::new(TunStreamApple::new(tun_fd));
-
+                let tun_stream = Box::new(TunStreamUnixType::new(tun_fd));
                 let streams = MioStreams::new(tun_stream, socket_factory, poll).expect("Failed to create mio streams");
                 Box::new(streams)
             },
@@ -71,15 +66,7 @@ impl Connection {
     /// Notifies library that file descriptor for tun device has changed.
     #[cfg_attr(feature = "uniffi", uniffi::method)]
     pub fn update_unix_tun(&self, tun_fd: i32) {
-        #[cfg(all(feature = "unix", not(feature = "apple")))]
-        (self.send_pvpn_message)(PvpnMessage::UpdateTun(
-            Box::new(move || Box::new(TunStreamUnix::new(tun_fd)))
-        ));
-
-        #[cfg(feature = "apple")]
-        (self.send_pvpn_message)(PvpnMessage::UpdateTun(
-            Box::new(move || Box::new(TunStreamApple::new(tun_fd)))
-        ));
+        (self.send_pvpn_message)(PvpnMessage::UpdateTun(Box::new(move || Box::new(TunStreamUnixType::new(tun_fd)))));
     }
 }
 

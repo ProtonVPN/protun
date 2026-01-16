@@ -56,6 +56,7 @@ impl Stream for TunStreamApple {
         let rv = self.file.read(buf);
         match rv {
             Ok(bytes_read) if bytes_read >= APPLE_TUN_PACKET_HEADER_LEN => {
+                // TODO: Optimization opportunity: avoid the copy below by adding an offset or slice within StreamResult
                 let data_len = bytes_read - APPLE_TUN_PACKET_HEADER_LEN;
                 buf.copy_within(APPLE_TUN_PACKET_HEADER_LEN..bytes_read, 0);
                 StreamResult::Ok { bytes_count: data_len, would_block: false, pending_write: false }
