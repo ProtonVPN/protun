@@ -189,6 +189,8 @@ pub struct PrivateKeyUpdateInfo {
     pub local_agent_client_cert: Option<LocalAgentClientCert>,
 }
 
+/// Callback interface for receiving connection state changes. Avoid doing heavy work in the
+/// callback to avoid blocking the connection thread.
 #[cfg_attr(feature = "uniffi", uniffi::export(callback_interface))]
 pub trait StateChangedCallback: Send + Sync {
     fn on_state_changed(&self, state: State);
