@@ -291,35 +291,39 @@ impl PvpnConnection {
     }
 
     fn read_from_stream(&mut self, stream_id: StreamId) {
-        if let Some(stream) = self.streams.get_stream(stream_id) {
-            let mut last_tun_maybe_error = None;
-            loop {
-                let read_result = stream.read(&mut self.stream_read_buffer[..]);
-                if stream_id == StreamId::TUN_STREAM_ID {
-                    last_tun_maybe_error = to_tun_error(&read_result);
+        let mut last_tun_maybe_error = None;
+        loop {
+            let stream = match self.streams.get_stream(stream_id) {
+                Some(stream) => stream,
+                None => {
+                    log::error!("stream {:?} not found", stream_id);
+                    break;
                 }
-                match read_result {
-                    StreamResult::Ok { bytes_count: bytes_read, would_block, pending_write: _ } => {
-                        if bytes_read > 0 && self.network_available {
-                            // When there's no network, just drop the data from tun device.
-                            self.client.push(Action::read(stream_id, self.stream_read_buffer[..bytes_read].to_vec()));
-                        }
-                        if would_block || bytes_read == 0 {
-                            break;
-                        }
+            };
+            let read_result = stream.read(&mut self.stream_read_buffer[..]);
+            if stream_id == StreamId::TUN_STREAM_ID {
+                last_tun_maybe_error = to_tun_error(&read_result);
+            }
+            match read_result {
+                StreamResult::Ok { bytes_count: bytes_read, would_block, pending_write: _ } => {
+                    if bytes_read > 0 && self.network_available {
+                        // When there's no network, just drop the data from tun device.
+                        self.client.push(Action::read(stream_id, self.stream_read_buffer[..bytes_read].to_vec()));
+                        self.pull_from_client();
                     }
-                    StreamResult::Err(e) => {
-                        self.client.push_error(stream_id, e.kind());
-                        log::info!("stream {:?} read error: {:?}", stream_id, e);
+                    if would_block || bytes_read == 0 {
                         break;
                     }
                 }
+                StreamResult::Err(e) => {
+                    self.client.push_error(stream_id, e.kind());
+                    log::info!("stream {:?} read error: {:?}", stream_id, e);
+                    break;
+                }
             }
-            if stream_id == StreamId::TUN_STREAM_ID {
-                self.current_tun_error = last_tun_maybe_error;
-            }
-        } else {
-            log::error!("stream {:?} not found", stream_id);
+        }
+        if stream_id == StreamId::TUN_STREAM_ID {
+            self.current_tun_error = last_tun_maybe_error;
         }
     }
 
