@@ -29,17 +29,14 @@ static mut MAX_LOG_LEVEL: log::Level = log::Level::Info;
 #[cfg_attr(feature = "uniffi", uniffi::export)]
 pub fn init_logger(level: LogLevel, logger: Box<dyn ClientLogger>) {
     unsafe {
-        let backtrace = if cfg!(debug_assertions) { "full" } else { "1" };
-        env::set_var("RUST_BACKTRACE", backtrace);
+        env::set_var("RUST_BACKTRACE", "full");
         MAX_LOG_LEVEL = level.clone().into();
     };
     let previous_panic_hook = panic::take_hook();
     panic::set_hook(Box::new(move |info| {
         log::error!("Panic in rust:\n{info}");
-        if cfg!(debug_assertions) {
-            let backtrace = Backtrace::capture();
-            log::error!("Rust backtrace:\n{backtrace}");
-        }
+        let backtrace = Backtrace::capture();
+        log::error!("Rust backtrace:\n{backtrace}");
         previous_panic_hook(info);
     }));
     CLIENT_LOGGER.write().unwrap().replace(logger);
