@@ -49,7 +49,11 @@ impl Stream for TunStreamUnix {
         let ret = self.file.read(buf);
         match ret {
             Ok(bytes_count) => {
-                StreamResult::Ok { bytes_count, would_block: false, pending_write: false }
+                if bytes_count == 0 {
+                    StreamResult::Err(io::Error::new(io::ErrorKind::UnexpectedEof, "tun read: unexpected EOF"))
+                } else {
+                    StreamResult::Ok { bytes_count, would_block: false, pending_write: false }
+                }
             }
             Err(e) => if e.kind() == io::ErrorKind::WouldBlock {
                 StreamResult::Ok { bytes_count: 0, would_block: true, pending_write: false }
@@ -65,6 +69,9 @@ impl Stream for TunStreamUnix {
             let ret = self.file.write(&data[bytes_written..]);
             match ret {
                 Ok(bytes_count) => {
+                    if bytes_count < data.len() {
+                        log::debug!("tun: partial write");
+                    }
                     bytes_written += bytes_count;
                 }
                 Err(e) => return if e.kind() == io::ErrorKind::WouldBlock {

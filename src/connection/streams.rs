@@ -72,6 +72,7 @@ pub(crate) enum StreamResult {
         pending_write: bool,
     },
     Err(io::Error),
+    StreamClosed,
 }
 
 #[derive(Debug)]

@@ -320,6 +320,11 @@ impl PvpnConnection {
                     log::info!("stream {:?} read error: {:?}", stream_id, e);
                     break;
                 }
+                StreamResult::StreamClosed => {
+                    log::info!("closing stream {:?}", stream_id);
+                    self.client.push(Action::close(stream_id));
+                    break;
+                }
             }
         }
         if stream_id == StreamId::TUN_STREAM_ID {
@@ -351,6 +356,10 @@ impl PvpnConnection {
                 self.client.push_error(stream_id, e.kind());
                 log::error!("stream {:?} {op_name} error: {:?}", stream_id, e);
             },
+            StreamResult::StreamClosed => {
+                log::error!("closing stream {:?}...", stream_id);
+                self.client.push(Action::close(stream_id));
+            }
         }
     }
 
@@ -407,6 +416,7 @@ fn to_tun_error(res: &StreamResult) -> Option<String> {
     match res {
         StreamResult::Ok { bytes_count: _, would_block: _, pending_write: _ } => None,
         StreamResult::Err(e) => Some(e.to_string()),
+        StreamResult::StreamClosed => Some("Stream closed".to_string()),
     }
 }
 

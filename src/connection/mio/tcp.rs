@@ -46,7 +46,13 @@ impl Stream for TcpSocketStream {
         let ret = self.sock.read(buf);
         let pending_write = !self.write_buffer.is_empty();
         match ret {
-            Ok(bytes_count) => StreamResult::Ok { bytes_count, would_block: false, pending_write },
+            Ok(bytes_count) => {
+                if bytes_count == 0 {
+                    StreamResult::StreamClosed
+                } else {
+                    StreamResult::Ok { bytes_count, would_block: false, pending_write }
+                }
+            },
             Err(e) => if e.kind() == io::ErrorKind::WouldBlock {
                 StreamResult::Ok { bytes_count: 0, would_block: true, pending_write }
             } else {
