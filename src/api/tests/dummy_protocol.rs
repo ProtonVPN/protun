@@ -22,7 +22,7 @@ use pvpnclient::os_interface::time::{SinceUnixEpoch, SystemTime};
 use pvpnclient::peer::{Peer, PeerAddr};
 use pvpnclient::vpn::{VpnProtocol, WireguardPrivateKey};
 use serde::{Serialize, Deserialize};
-
+use pvpnclient::stats::TunnelStats;
 use crate::connection::{pvpn_client::PvpnClient, util::error_kind_to_socket_err};
 use super::test_clocks::{TestMonotonicClock, TestRealtimeClock};
 
@@ -291,6 +291,10 @@ impl PvpnClient for DummyPvpnClient {
     fn notify_network_change(&mut self) {
         // current implementation does not call this method
         todo!()
+    }
+
+    fn get_stats(&mut self) -> Option<TunnelStats> {
+        None
     }
 }
 

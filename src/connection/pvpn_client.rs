@@ -23,6 +23,7 @@ use pvpnclient::{Deadline, TunnelInfo};
 use pvpnclient::Client;
 use pvpnclient::{Action, PvpnReturn, StreamId, Task};
 use pvpnclient::peer::{Peer, PeerAddr};
+use pvpnclient::stats::TunnelStats;
 use crate::connection::time::{ClientMonotonicFactory, ClientRealtimeFactory};
 use crate::connection::util::{error_kind_to_socket_err};
 
@@ -39,6 +40,7 @@ pub trait PvpnClient {
     fn get_tunnel_info(&mut self) -> Option<TunnelInfo>;
     fn wakeup_deadline(&self) -> Deadline;
     fn notify_network_change(&mut self);
+    fn get_stats(&mut self) -> Option<TunnelStats>;
 }
 pub(crate) struct PvpnClientImpl<'a> {
     c: Client<'a>,
@@ -127,5 +129,11 @@ impl <'a> PvpnClient for PvpnClientImpl<'a> {
         let tunnel_info = self.c.tunnel_info();
         self.handle_result(&tunnel_info);
         tunnel_info.value
+    }
+
+    fn get_stats(&mut self) -> Option<TunnelStats> {
+        let tunnel_stats = self.c.tunnel_stats();
+        self.handle_result(&tunnel_stats);
+        tunnel_stats.value
     }
 }
