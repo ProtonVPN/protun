@@ -21,14 +21,28 @@ use crate::api::connection::PeerInfo;
 
 pub(crate) fn error_kind_to_socket_err(error_kind: ErrorKind) -> SystemError {
     match error_kind {
-        ErrorKind::ConnectionRefused => SystemError::ConnectionRefused,
-        ErrorKind::TimedOut => SystemError::Timeout,
-        ErrorKind::HostUnreachable => SystemError::HostUnreachable,
-        ErrorKind::NetworkUnreachable => SystemError::NetworkUnreachable,
         ErrorKind::AddrInUse => SystemError::AddressInUse,
+        ErrorKind::AddrNotAvailable => SystemError::AddrNotAvailable,
+        ErrorKind::AlreadyExists => SystemError::AlreadyExists,
+        ErrorKind::BrokenPipe => SystemError::BrokenPipe,
         ErrorKind::ConnectionAborted => SystemError::ConnectionAborted,
+        ErrorKind::ConnectionRefused => SystemError::ConnectionRefused,
         ErrorKind::ConnectionReset => SystemError::ConnectionReset,
+        ErrorKind::HostUnreachable => SystemError::HostUnreachable,
+        ErrorKind::Interrupted => SystemError::Interrupted,
+        ErrorKind::InvalidData => SystemError::InvalidData,
+        ErrorKind::InvalidInput => SystemError::InvalidInput,
+        ErrorKind::NetworkDown => SystemError::NetworkDown,
+        ErrorKind::NetworkUnreachable => SystemError::NetworkUnreachable,
         ErrorKind::NotConnected => SystemError::NotConnected,
+        ErrorKind::NotFound => SystemError::NotFound,
+        ErrorKind::PermissionDenied => SystemError::PermissionDenied,
+        ErrorKind::QuotaExceeded => SystemError::QuotaExceeded,
+        ErrorKind::ResourceBusy => SystemError::ResourceBusy,
+        ErrorKind::TimedOut => SystemError::Timeout,
+        ErrorKind::UnexpectedEof => SystemError::UnexpectedEof,
+        ErrorKind::WouldBlock => SystemError::WouldBlock,
+        ErrorKind::WriteZero => SystemError::WriteZero,
         _ => SystemError::Unknown(None),
     }
 }
