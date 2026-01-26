@@ -21,7 +21,7 @@ use std::os::fd::AsRawFd;
 
 use libc::EINPROGRESS;
 use mio::net::{TcpStream, UdpSocket};
-use socket2::{Domain, SockAddr, Socket, Type};
+use socket2::{Domain, Protocol, SockAddr, Socket, Type};
 
 use crate::connection::mio::streams::MioStream;
 use crate::connection::mio::tcp::TcpSocketStream;
@@ -36,6 +36,10 @@ impl SocketFactoryUnix {
         Self { on_socket_fd_available_callback }
     }
 }
+
+const UDP_SEND_BUFFER_SIZE: usize = 3 * 1024 * 1024;
+const UDP_RECV_BUFFER_SIZE: usize = 3 * 1024 * 1024;
+
 impl MioSocketFactory for SocketFactoryUnix {
 
     fn new_tcp_socket(&self, addr: SocketAddr) -> io::Result<Box<dyn MioStream>> {
@@ -61,14 +65,23 @@ impl MioSocketFactory for SocketFactoryUnix {
 
     fn new_udp_socket(&self, addr: SocketAddr) -> io::Result<Box<dyn MioStream>> {
         let bind_addr = match addr {
-            SocketAddr::V4(_) => "0.0.0.0:0",
-            SocketAddr::V6(_) => "[::]:0",
-        };
-        let udp = UdpSocket::bind(SocketAddr::from_str(bind_addr).unwrap())?;
+            SocketAddr::V4(_) => SocketAddr::from_str("0.0.0.0:0"),
+            SocketAddr::V6(_) => SocketAddr::from_str("[::]:0"),
+        }.unwrap();
+        let sock = Socket::new(Domain::for_address(addr), Type::DGRAM, Some(Protocol::UDP))?;
+
+        // Increased buffer size to help with speed
+        sock.set_send_buffer_size(UDP_SEND_BUFFER_SIZE)?;
+        sock.set_recv_buffer_size(UDP_RECV_BUFFER_SIZE)?;
+
+        let fd = sock.as_raw_fd();
         if let Some(callback) = &self.on_socket_fd_available_callback {
-            callback.on_socket_fd_available(udp.as_raw_fd());
+            callback.on_socket_fd_available(fd);
         }
-        udp.connect(addr)?;
-        Ok(Box::new(UdpSocketStream::new(udp)?))
+        sock.bind(&SockAddr::from(bind_addr))?;
+        sock.set_nonblocking(true)?;
+        sock.connect(&SockAddr::from(addr))?;
+        let mio_udp = UdpSocket::from_std(std::net::UdpSocket::from(sock));
+        Ok(Box::new(UdpSocketStream::new(mio_udp)?))
     }
 }
