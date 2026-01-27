@@ -110,10 +110,13 @@ internal class ProTunVpnService : VpnService() {
                 false
             }
             intent.action == VPN_ACTION -> {
+                // As action is always delivered via startForegroundService we always need to
+                // meet the promise of startForeground, even if we're stopping it right away.
+                startForeground(notifications.notificationId, notifications.buildNotification(this, manager.state.value))
+
                 val vpnAction = requireNotNull(intent.getParcelableExtra<VpnAction>(VPN_ACTION_EXTRA))
                 when (vpnAction) {
                     is VpnAction.Connect -> {
-                        startForeground(notifications.notificationId, notifications.buildNotification(this, manager.state.value))
                         manager.connect(vpnAction.config, Builder(), socketProtectCallback)
                         true
                     }
@@ -140,6 +143,8 @@ internal class ProTunVpnService : VpnService() {
                         } else {
                             logger.log(LogLevel.WARN, "ProTunVpnService received update action without " +
                                     "active connection ${vpnAction.javaClass.simpleName}")
+                            stopForeground(STOP_FOREGROUND_REMOVE)
+                            stopSelf()
                             false
                         }
                     }

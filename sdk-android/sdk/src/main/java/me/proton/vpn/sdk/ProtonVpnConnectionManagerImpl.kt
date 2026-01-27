@@ -24,6 +24,7 @@ import android.content.Context
 import android.content.Intent
 import android.content.ServiceConnection
 import android.os.IBinder
+import androidx.core.content.ContextCompat
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -139,7 +140,7 @@ internal class ProtonVpnConnectionManagerImpl(
     }
 
     private fun sendAction(vpnAction: ProTunVpnService.VpnAction) {
-        context.startService(ProTunVpnService.actionIntent(context, vpnAction))
+        ContextCompat.startForegroundService(context,ProTunVpnService.actionIntent(context, vpnAction))
     }
 
     private fun setState(state: VpnConnectionState) {
