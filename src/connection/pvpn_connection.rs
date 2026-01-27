@@ -316,7 +316,9 @@ impl PvpnConnection {
                     }
                 }
                 StreamResult::Err(e) => {
-                    self.client.push_error(stream_id, e.kind());
+                    if stream_id != StreamId::TUN_STREAM_ID { // Don't notify libvpnclient about tun errors
+                        self.client.push_error(stream_id, e.kind());
+                    }
                     log::info!("stream {:?} read error: {:?}", stream_id, e);
                     break;
                 }
@@ -353,7 +355,9 @@ impl PvpnConnection {
                 }
             },
             StreamResult::Err(e) => {
-                self.client.push_error(stream_id, e.kind());
+                if stream_id != StreamId::TUN_STREAM_ID {
+                    self.client.push_error(stream_id, e.kind()); // Don't notify libvpnclient about tun errors
+                }
                 log::error!("stream {:?} {op_name} error: {:?}", stream_id, e);
             },
             StreamResult::StreamClosed => {
