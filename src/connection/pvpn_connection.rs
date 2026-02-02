@@ -16,7 +16,9 @@
 // along with ProtonVPN.  If not, see <https://www.gnu.org/licenses/>.
 
 use std::{net::SocketAddr, sync::mpsc, thread::{self, JoinHandle}};
-
+use std::cmp::min;
+use std::io::ErrorKind;
+use std::time::Duration;
 use pvpnclient::{Action, ActionKind, StreamId, TunnelInfo};
 use pvpnclient::action::OpenStream;
 use pvpnclient::peer::Peer;
@@ -31,10 +33,12 @@ use crate::connection::CreateTunStream;
 use crate::{
     api::{
         connection::{InitialConnectionConfig, PeerInfo, WgClientPrivateKey},
-        state::{PeerConnectionInfo, Protocol, DisconnectReason, WaitReason},
+        state::{DisconnectReason, PeerConnectionInfo, Protocol, WaitReason},
     },
     connection::{pvpn_client::PvpnClient, pvpn_state_handler::PvpnConnectionStateHandler, streams::{PollResult, PollWaker, StreamResult, Streams}},
 };
+use crate::api::connection::ConnectivityEvent;
+use crate::connection::network_recovery_handler::NetworkRecoveryHandler;
 
 /// State of the pvpn connection.
 #[derive(Clone, PartialEq, Debug)]
@@ -53,7 +57,7 @@ pub(crate) enum PvpnMessage {
     /// Disconnect the stop the connection loop.
     Disconnect,
     SetPeers(Vec<PeerInfo>),
-    SetIsNetworkAvailable(bool),
+    ConnectivityChange(ConnectivityEvent),
     #[cfg(feature = "mio")]
     UpdateTun(CreateTunStream),
     UpdateWgPrivateKey(WgClientPrivateKey),
@@ -85,7 +89,7 @@ pub(crate) fn start_pvpn_connection(
             message_receiver,
             config.network_available,
             config.peers,
-            config.wg_private_key
+            config.wg_private_key,
         );
         connection.run();
     });
@@ -107,10 +111,10 @@ struct PvpnConnection {
     message_receiver: mpsc::Receiver<PvpnMessage>,
     state: PvpnConnectionState,
     peers: Vec<PeerInfo>,
-    network_available: bool,
     stream_read_buffer: Box<[u8; STREAM_BUFFER_SIZE]>,
     should_stop: bool,
     current_tun_error: Option<String>,
+    network_recovery_handler: NetworkRecoveryHandler,
 }
 impl PvpnConnection {
     fn new(
@@ -129,15 +133,15 @@ impl PvpnConnection {
             message_receiver,
             state: PvpnConnectionState::Disconnected(None),
             peers,
-            network_available,
             stream_read_buffer: Box::new([0; STREAM_BUFFER_SIZE]),
             should_stop: false,
             current_tun_error: None,
+            network_recovery_handler: NetworkRecoveryHandler::new(network_available),
         };
         ret.client.set_private_key(&wg_private_key.into());
-        if ret.network_available {
-            ret.activate_peers();
-        } else {
+        ret.activate_peers();
+        if !ret.network_recovery_handler.is_network_available() {
+            ret.client.notify_network_down();
             ret.set_state(PvpnConnectionState::WaitingForAction(WaitReason::WaitingForNetwork))
         }
         ret
@@ -159,9 +163,12 @@ impl PvpnConnection {
     }
 
     fn update_state(&mut self) {
-        if self.network_available {
+        if self.network_recovery_handler.is_network_available() {
             let info = self.client.get_tunnel_info();
             self.set_state(to_client_state(info, self.current_tun_error.clone(), &self.peers));
+            if let PvpnConnectionState::Connected(_) = &self.state {
+                self.network_recovery_handler.on_connected();
+            }
         } else {
             self.set_state(PvpnConnectionState::WaitingForAction(WaitReason::WaitingForNetwork))
         }
@@ -178,8 +185,8 @@ impl PvpnConnection {
                 PvpnMessage::SetPeers(peers) => {
                     self.set_peers(peers);
                 },
-                PvpnMessage::SetIsNetworkAvailable(network_available) => {
-                    self.set_network_available(network_available);
+                PvpnMessage::ConnectivityChange(event) => {
+                    self.on_connectivity_change(event);
                 },
                 #[cfg(feature = "mio")]
                 PvpnMessage::UpdateTun(create_tun_stream) => {
@@ -234,9 +241,9 @@ impl PvpnConnection {
     }
 
     fn poll_from_streams(&mut self) {
-        let deadline = self.client.wakeup_deadline();
-        let poll_results = self.streams.poll(deadline);
-        self.client.set_current_time();
+        let poll_results = self.streams.poll(self.poll_deadline());
+        let (monotonic_now, _) = self.client.set_current_time();
+        self.network_recovery_handler.on_resumed(monotonic_now, || self.client.notify_network_change());
         match poll_results {
             Ok(poll_results) => {
                 for res in &poll_results {
@@ -244,10 +251,22 @@ impl PvpnConnection {
                 }
             }
             Err(e) => {
-                if e.kind() != std::io::ErrorKind::Interrupted {
+                if e.kind() != ErrorKind::Interrupted {
                     log::error!("failed to poll streams: {:?}", e);
                 }
             }
+        }
+    }
+
+    fn poll_deadline(&self) -> Option<Duration> {
+        let pvpn_delay = self.client.wakeup_deadline();
+        if let Some(network_handler_delay) = self.network_recovery_handler.wakeup_delay(|| self.client.monotonic_now()) {
+            match pvpn_delay {
+                None => Some(network_handler_delay),
+                Some(pvpn_delay) => Some(min(pvpn_delay, network_handler_delay))
+            }
+        } else {
+            pvpn_delay
         }
     }
 
@@ -279,13 +298,14 @@ impl PvpnConnection {
         };
         match open_result {
             Ok(()) => {
+                self.network_recovery_handler.on_successful_socket_open();
                 if !is_udp {
                     self.streams.set_poll_enable_wait_for_write(stream_id, true);
                 }
             }
             Err(e) => {
-                self.client.push_error(stream_id, e.kind());
                 log::error!("stream {:?} open error: {:?}", stream_id, e);
+                self.handle_stream_error(stream_id, &e);
             }
         }
     }
@@ -306,7 +326,7 @@ impl PvpnConnection {
             }
             match read_result {
                 StreamResult::Ok { bytes_count: bytes_read, would_block, pending_write: _ } => {
-                    if bytes_read > 0 && self.network_available {
+                    if bytes_read > 0 && self.network_recovery_handler.is_network_available() {
                         // When there's no network, just drop the data from tun device.
                         self.client.push(Action::read(stream_id, self.stream_read_buffer[..bytes_read].to_vec()));
                         self.pull_from_client();
@@ -316,10 +336,8 @@ impl PvpnConnection {
                     }
                 }
                 StreamResult::Err(e) => {
-                    if stream_id != StreamId::TUN_STREAM_ID { // Don't notify libvpnclient about tun errors
-                        self.client.push_error(stream_id, e.kind());
-                    }
                     log::info!("stream {:?} read error: {:?}", stream_id, e);
+                    self.handle_stream_error(stream_id, &e);
                     break;
                 }
                 StreamResult::StreamClosed => {
@@ -350,15 +368,13 @@ impl PvpnConnection {
         match res {
             StreamResult::Ok { bytes_count: _, would_block: _, pending_write } => {
                 self.streams.set_poll_enable_wait_for_write(stream_id, *pending_write);
-                if !*pending_write && stream_id != StreamId::TUN_STREAM_ID {
+                if !*pending_write && stream_id > StreamId::TUN_STREAM_ID {
                     self.client.push(Action::done(stream_id));
                 }
             },
             StreamResult::Err(e) => {
-                if stream_id != StreamId::TUN_STREAM_ID {
-                    self.client.push_error(stream_id, e.kind()); // Don't notify libvpnclient about tun errors
-                }
                 log::error!("stream {:?} {op_name} error: {:?}", stream_id, e);
+                self.handle_stream_error(stream_id, e);
             },
             StreamResult::StreamClosed => {
                 log::error!("closing stream {:?}...", stream_id);
@@ -367,43 +383,34 @@ impl PvpnConnection {
         }
     }
 
-    fn set_network_available(&mut self, is_network_available: bool) {
-        let changed = is_network_available != self.network_available;
-        if is_network_available || changed {
-            self.network_available = is_network_available;
-            if !changed {
-                log::info!("network adapters changed. resetting connection...");
-            } else if is_network_available {
-                log::info!("network is now available");
-            } else {
-                log::info!("network lost");
-            }
-            self.deactivate_peers();
-            if is_network_available {
-                self.activate_peers();
-            } else {
-                self.set_state(PvpnConnectionState::WaitingForAction(WaitReason::WaitingForNetwork))
-            }
+    fn on_connectivity_change(&mut self, event: ConnectivityEvent) {
+        self.network_recovery_handler.on_connectivity_change(event);
+        if self.network_recovery_handler.is_network_available() {
+            self.client.notify_network_change();
+        } else {
+            self.client.notify_network_down();
+            self.set_state(PvpnConnectionState::WaitingForAction(WaitReason::WaitingForNetwork))
+        }
+    }
+
+    fn handle_stream_error(&mut self, stream_id: StreamId, err: &std::io::Error) {
+        if stream_id > StreamId::TUN_STREAM_ID { // Only notify libpvpnclient about socket errors
+            self.network_recovery_handler.on_stream_error(stream_id, err, self.client.monotonic_now());
+            self.client.push_error(stream_id, err.kind());
         }
     }
 
     fn set_peers(&mut self, new_peers: Vec<PeerInfo>) {
-        self.deactivate_peers();
-        self.peers = new_peers;
-        if self.network_available {
-            self.activate_peers();
+        for peer in &self.peers {
+            self.client.peer_remove(peer.addr());
         }
+        self.peers = new_peers;
+        self.activate_peers();
     }
 
     fn activate_peers(&mut self) {
         for peer in &self.peers {
             self.client.peer_add(peer.as_peer());
-        }
-    }
-
-    fn deactivate_peers(&mut self) {
-        for peer in &self.peers {
-            self.client.peer_remove(peer.addr());
         }
     }
 

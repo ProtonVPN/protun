@@ -27,6 +27,7 @@ use crate::{api::{
         },
     },
 }};
+use crate::api::connection::ConnectivityEvent;
 
 /// Set of integration tests using:
 /// - Real [Streams], [Connection] and [PvpnConnection] under test
@@ -161,7 +162,7 @@ fn connect_waiting_for_network() {
 
     // Make network available and expect handshake from client that was initiated after network became available
     let before_network_available_ts = helper.realtime_clock.now_nanos();
-    helper.connection.on_set_network_available(true);
+    helper.connection.on_connectivity_change(ConnectivityEvent::Up);
     let (handshake, client_addr) = helper.recv_udp(&udp_server_socket).unwrap();
     assert!(matches!(handshake, DummyProtocolPacket::Handshake(timestamp, _) if timestamp >= before_network_available_ts));
     helper.send_udp_to(&udp_server_socket, &client_addr, &DummyProtocolPacket::HandshakeResponse).unwrap();
@@ -179,13 +180,13 @@ fn pause_and_resume_network_while_connected() {
 
     let client_addr1 = helper.accept_and_verify_udp_connection(&udp_server_socket);
 
-    helper.connection.on_set_network_available(false);
+    helper.connection.on_connectivity_change(ConnectivityEvent::Down);
     helper.expect_state(|state| matches!(
         state,
         State::WaitingForAction { reason: WaitReason::WaitingForNetwork }
     ));
 
-    helper.connection.on_set_network_available(true);
+    helper.connection.on_connectivity_change(ConnectivityEvent::Up);
     let client_addr2 = helper.accept_and_verify_udp_connection(&udp_server_socket);
     assert_ne!(client_addr1, client_addr2);
 

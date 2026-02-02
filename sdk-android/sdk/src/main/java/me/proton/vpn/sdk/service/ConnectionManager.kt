@@ -39,6 +39,7 @@ import me.proton.vpn.sdk.internal.WallClockMs
 import me.proton.vpn.sdk.service.usecases.EstablishTun
 import me.proton.vpn.sdk.service.usecases.NetworkObserver
 import uniffi.protun.Connection
+import uniffi.protun.ConnectivityEvent
 import uniffi.protun.DisconnectReason
 import uniffi.protun.InitialConnectionConfig
 import uniffi.protun.LogLevel
@@ -87,8 +88,15 @@ internal class ConnectionManager(
             logger.log(LogLevel.INFO, "Validated networks change: $validatedNetworks")
             activeConnection?.let { connection ->
                 if (connection.validatedNetworks != validatedNetworks) {
+                    val wasUnavailable = connection.validatedNetworks.isEmpty()
                     activeConnection = connection.copy(validatedNetworks = validatedNetworks)
-                    connection.connection.onSetNetworkAvailable(validatedNetworks.isNotEmpty())
+                    connection.connection.onConnectivityChange(
+                        when {
+                            validatedNetworks.isEmpty() -> ConnectivityEvent.DOWN
+                            wasUnavailable -> ConnectivityEvent.UP
+                            else -> ConnectivityEvent.NETWORK_SWITCH
+                        }
+                    )
                 }
             }
         }.launchIn(serviceScope)

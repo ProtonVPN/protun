@@ -62,7 +62,7 @@ sealed interface VpnWaitReason : Parcelable {
     /**
      * Device currently has no network (airplane mode, no signal, etc.)
      */
-    object WaitingForNetwork : VpnWaitReason
+    data object WaitingForNetwork : VpnWaitReason
 }
 
 @Parcelize

@@ -1,4 +1,4 @@
-// Copyright (c) 2025 Proton AG
+// Copyright (c) 2026 Proton AG
 //
 // This file is part of ProtonVPN.
 //
@@ -15,25 +15,4 @@
 // You should have received a copy of the GNU General Public License
 // along with ProtonVPN.  If not, see <https://www.gnu.org/licenses/>.
 
-#[cfg(feature = "mio")]
-use crate::connection::mio::streams::MioStream;
-
-mod network_recovery_handler;
-
-#[cfg(test)]
-mod tests;
-
-mod constants;
-pub(crate) mod pcap_capture;
-pub(crate) mod pvpn_client;
-pub(crate) mod pvpn_connection;
-pub(crate) mod pvpn_state_handler;
-pub(crate) mod streams;
-pub(crate) mod time;
-pub(crate) mod util;
-
-#[cfg(feature = "mio")]
-pub(crate) mod mio;
-
-#[cfg(feature = "mio")]
-pub(crate) type CreateTunStream = Box<dyn FnOnce () -> Box<dyn MioStream> + Send + 'static>;
+mod network_recovery_handler_tests;

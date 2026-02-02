@@ -17,7 +17,7 @@
 
 use std::io::ErrorKind;
 use pvpnclient::os_interface::rand::{Seed256};
-use pvpnclient::os_interface::time::{InstantFactory, SystemTimeFactory};
+use pvpnclient::os_interface::time::{Instant, InstantFactory, SystemTime, SystemTimeFactory};
 use pvpnclient::vpn::{WireguardPrivateKey};
 use pvpnclient::{Deadline, TunnelInfo};
 use pvpnclient::Client;
@@ -30,7 +30,7 @@ use crate::connection::util::{error_kind_to_socket_err};
 /// Abstraction over [pvpnclient::pvpnclient::Client]
 pub trait PvpnClient {
     fn set_private_key(&mut self, private_key: &WireguardPrivateKey);
-    fn set_current_time(&mut self);
+    fn set_current_time(&mut self) -> (Instant, SystemTime);
     fn need_pull(&self) -> bool;
     fn peer_add(&mut self, peer: Peer);
     fn peer_remove(&mut self, peer_addr: PeerAddr);
@@ -40,7 +40,9 @@ pub trait PvpnClient {
     fn get_tunnel_info(&mut self) -> Option<TunnelInfo>;
     fn wakeup_deadline(&self) -> Deadline;
     fn notify_network_change(&mut self);
+    fn notify_network_down(&mut self);
     fn get_stats(&mut self) -> Option<TunnelStats>;
+    fn monotonic_now(&self) -> Instant;
 }
 pub(crate) struct PvpnClientImpl<'a> {
     c: Client<'a>,
@@ -80,12 +82,15 @@ impl <'a> PvpnClient for PvpnClientImpl<'a> {
         self.handle_result(result);
     }
 
-    fn set_current_time(&mut self) {
+    fn set_current_time(&mut self) -> (Instant, SystemTime) {
+        let monotonic_now = self.monotonic_factory.now();
+        let realtime_now = self.realtime_factory.now();
         let result = &self.c.set_time::<ClientRealtimeFactory, ClientMonotonicFactory>(
-            self.monotonic_factory.now(),
-            self.realtime_factory.now()
+            monotonic_now,
+            realtime_now
         );
         self.handle_result(result);
+        (monotonic_now, realtime_now)
     }
 
     fn need_pull(&self) -> bool { self.need_pull }
@@ -124,6 +129,11 @@ impl <'a> PvpnClient for PvpnClientImpl<'a> {
         let result = &self.c.notify_network_change();
         self.handle_result(result);
     }
+
+    fn notify_network_down(&mut self) {
+        // no-op in real impl, libpvpnclient will find it out based on socket errors,
+        // needed for testing
+    }
     
     fn get_tunnel_info(&mut self) -> Option<TunnelInfo> {
         let tunnel_info = self.c.tunnel_info();
@@ -135,5 +145,9 @@ impl <'a> PvpnClient for PvpnClientImpl<'a> {
         let tunnel_stats = self.c.tunnel_stats();
         self.handle_result(&tunnel_stats);
         tunnel_stats.value
+    }
+
+    fn monotonic_now(&self) -> Instant {
+        self.monotonic_factory.now()
     }
 }

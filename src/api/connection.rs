@@ -129,8 +129,8 @@ impl Connection {
     /// (e.g. network switched from wifi to mobile). Library will use that information
     /// to reset VPN connection sockets.
     #[cfg_attr(feature = "uniffi", uniffi::method)]
-    pub fn on_set_network_available(&self, is_network_available: bool) {
-        (self.send_pvpn_message)(PvpnMessage::SetIsNetworkAvailable(is_network_available));
+    pub fn on_connectivity_change(&self, event: ConnectivityEvent) {
+        (self.send_pvpn_message)(PvpnMessage::ConnectivityChange(event));
     }
 
     /// Disconnects. Connection should not be used after this.
@@ -172,6 +172,18 @@ pub struct InitialConnectionConfig {
     pub network_available: bool,
     #[cfg(feature = "local-agent")]
     pub local_agent: Option<InitialLocalAgentConfig>,
+}
+
+
+#[cfg_attr(feature = "uniffi", derive(uniffi::Enum))]
+#[derive(PartialEq)]
+pub enum ConnectivityEvent {
+    Up,
+    Down,
+
+    /// Network switch occurred (wifi -> mobile, between different wifi etc.).
+    /// This informs the library that it should reset VPN sockets.
+    NetworkSwitch,
 }
 
 #[cfg_attr(feature = "uniffi", derive(uniffi::Record))]

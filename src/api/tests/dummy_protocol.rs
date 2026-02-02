@@ -18,7 +18,7 @@
 use std::{collections::VecDeque, net::SocketAddr, num::NonZero, time::Duration};
 use pvpnclient::{Action, ActionKind, Deadline, StreamId, TunnelInfo};
 use pvpnclient::action::OpenStream;
-use pvpnclient::os_interface::time::{SinceUnixEpoch, SystemTime};
+use pvpnclient::os_interface::time::{FromDuration, Instant, InstantFactory, SinceUnixEpoch, SystemTime};
 use pvpnclient::peer::{Peer, PeerAddr};
 use pvpnclient::vpn::{VpnProtocol, WireguardPrivateKey};
 use serde::{Serialize, Deserialize};
@@ -35,7 +35,7 @@ use super::test_clocks::{TestMonotonicClock, TestRealtimeClock};
 
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
 pub(crate) enum DummyProtocolPacket {
-    Handshake(i64, Vec<u8>),
+    Handshake(u128, Vec<u8>),
     HandshakeResponse,
     Data(Vec<u8>),
 }
@@ -157,12 +157,18 @@ impl DummyPvpnClient {
         None
     }
 
-    fn reset_current_connection(&mut self) {
+    fn close_current_connection(&mut self) {
         if let Some((stream_id, _, _)) = self.current_connection {
             self.actions.clear();
             self.actions.push_back(Action::close(stream_id.clone()));
             self.current_connection = None;
             self.connection_state = ConnectionState::Disconnected;
+        }
+    }
+
+    fn reset_current_connection(&mut self) {
+        if let Some((_, _, _)) = self.current_connection {
+            self.close_current_connection();
             self.maybe_connect();
         }
     }
@@ -173,12 +179,11 @@ impl PvpnClient for DummyPvpnClient {
         self.reset_current_connection();
     }
     
-    fn set_current_time(&mut self) {
-        let real_time = std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .unwrap()
-            .as_nanos() as i64;
-        self.realtime_clock.set_nanos(real_time);
+    fn set_current_time(&mut self) -> (Instant, SystemTime) {
+        let real_time =
+            std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap();
+        self.realtime_clock.set_nanos(real_time.as_nanos());
+        (self.monotonic_now(), SystemTime::from_duration(real_time))
     }
 
     fn need_pull(&self) -> bool {
@@ -289,12 +294,20 @@ impl PvpnClient for DummyPvpnClient {
     }
     
     fn notify_network_change(&mut self) {
-        // current implementation does not call this method
-        todo!()
+        self.maybe_connect()
     }
+    
+    fn notify_network_down(&mut self) {
+        // simulate pvpnclient closing sockets when on network gone errors
+        self.close_current_connection();
+    }   
 
     fn get_stats(&mut self) -> Option<TunnelStats> {
         None
+    }
+
+    fn monotonic_now(&self) -> Instant {
+        Instant::from_duration(self.monotonic_clock.now())
     }
 }
 

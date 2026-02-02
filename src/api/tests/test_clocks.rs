@@ -30,17 +30,12 @@ impl TestMonotonicClock {
         }
     }
 
-    pub(crate) fn now_nanos(&self) -> i64 {
-        self.current_duration.lock().unwrap().as_nanos() as i64
+    pub(crate) fn now(&self) -> Duration {
+        self.current_duration.lock().unwrap().clone()
     }
 
-    pub(crate) fn set_nanos(&self, nanos: i64) {
-        *self.current_duration.lock().unwrap() = Duration::from_nanos(nanos as u64);
-    }
-
-    pub(crate) fn advance_nanos(&self, nanos: i64) {
-        let mut duration = self.current_duration.lock().unwrap();
-        *duration += Duration::from_nanos(nanos as u64);
+    pub(crate) fn set(&self, value: Duration) {
+        *self.current_duration.lock().unwrap() = value;
     }
 
     pub(crate) fn advance(&self, duration: Duration) {
@@ -50,7 +45,7 @@ impl TestMonotonicClock {
 
 #[derive(Clone)]
 pub(crate) struct TestRealtimeClock {
-    current_time_ns: Arc<Mutex<i64>>,
+    current_time_ns: Arc<Mutex<u128>>,
 }
 
 impl TestRealtimeClock {
@@ -58,25 +53,25 @@ impl TestRealtimeClock {
         let now = std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
             .unwrap()
-            .as_nanos() as i64;
+            .as_nanos();
         Self {
             current_time_ns: Arc::new(Mutex::new(now)),
         }
     }
 
-    pub(crate) fn now_nanos(&self) -> i64 {
+    pub(crate) fn now_nanos(&self) -> u128 {
         *self.current_time_ns.lock().unwrap()
     }
 
-    pub(crate) fn set_nanos(&self, time_ns: i64) {
+    pub(crate) fn set_nanos(&self, time_ns: u128) {
         *self.current_time_ns.lock().unwrap() = time_ns;
     }
 
-    pub(crate) fn advance_nanos(&self, duration_ns: i64) {
+    pub(crate) fn advance_nanos(&self, duration_ns: u128) {
         *self.current_time_ns.lock().unwrap() += duration_ns;
     }
 
     pub(crate) fn advance(&self, duration: Duration) {
-        *self.current_time_ns.lock().unwrap() += duration.as_nanos() as i64;
+        *self.current_time_ns.lock().unwrap() += duration.as_nanos();
     }
 }
