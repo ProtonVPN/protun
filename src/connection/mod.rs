@@ -24,7 +24,7 @@ mod network_recovery_handler;
 mod tests;
 
 mod constants;
-pub(crate) mod pcap_capture;
+pub(crate) mod pcap_stream;
 pub(crate) mod pvpn_client;
 pub(crate) mod pvpn_connection;
 pub(crate) mod pvpn_state_handler;

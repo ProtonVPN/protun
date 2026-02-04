@@ -18,10 +18,11 @@
 use std::{collections::VecDeque, net::SocketAddr, num::NonZero, time::Duration};
 use pvpnclient::{Action, ActionKind, Deadline, StreamId, TunnelInfo};
 use pvpnclient::action::OpenStream;
-use pvpnclient::os_interface::time::{FromDuration, Instant, InstantFactory, SinceUnixEpoch, SystemTime};
+use pvpnclient::os_interface::time::{FromDuration, Instant, SinceUnixEpoch, SystemTime};
 use pvpnclient::peer::{Peer, PeerAddr};
 use pvpnclient::vpn::{VpnProtocol, WireguardPrivateKey};
 use serde::{Serialize, Deserialize};
+use pvpnclient::id::CaptureId;
 use pvpnclient::stats::TunnelStats;
 use crate::connection::{pvpn_client::PvpnClient, util::error_kind_to_socket_err};
 use super::test_clocks::{TestMonotonicClock, TestRealtimeClock};
@@ -308,6 +309,11 @@ impl PvpnClient for DummyPvpnClient {
 
     fn monotonic_now(&self) -> Instant {
         Instant::from_duration(self.monotonic_clock.now())
+    }
+
+    fn set_packet_capture_enabled(&mut self, _enabled: bool) -> CaptureId {
+        // not supported in tests
+        StreamId::PCAP_STREAM_ID
     }
 }
 

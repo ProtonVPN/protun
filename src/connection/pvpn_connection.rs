@@ -37,8 +37,9 @@ use crate::{
     },
     connection::{pvpn_client::PvpnClient, pvpn_state_handler::PvpnConnectionStateHandler, streams::{PollResult, PollWaker, StreamResult, Streams}},
 };
-use crate::api::connection::ConnectivityEvent;
+use crate::api::connection::{ConnectivityEvent, PcapFileInfo};
 use crate::connection::network_recovery_handler::NetworkRecoveryHandler;
+use crate::connection::pcap_stream::PcapStream;
 
 /// State of the pvpn connection.
 #[derive(Clone, PartialEq, Debug)]
@@ -61,6 +62,8 @@ pub(crate) enum PvpnMessage {
     #[cfg(feature = "mio")]
     UpdateTun(CreateTunStream),
     UpdateWgPrivateKey(WgClientPrivateKey),
+    StartPacketCapture(PcapFileInfo),
+    StopPacketCapture,
 }
 
 pub(crate) type SendPvpnMessage = Box<dyn Fn(PvpnMessage) -> () + Send + Sync>;
@@ -90,6 +93,7 @@ pub(crate) fn start_pvpn_connection(
             config.network_available,
             config.peers,
             config.wg_private_key,
+            config.pcap_file,
         );
         connection.run();
     });
@@ -115,6 +119,7 @@ struct PvpnConnection {
     should_stop: bool,
     current_tun_error: Option<String>,
     network_recovery_handler: NetworkRecoveryHandler,
+    pcap_stream: Option<PcapStream>,
 }
 impl PvpnConnection {
     fn new(
@@ -125,6 +130,7 @@ impl PvpnConnection {
         network_available: bool,
         peers: Vec<PeerInfo>,
         wg_private_key: WgClientPrivateKey,
+        pcap_file_info: Option<PcapFileInfo>,
     ) -> Self {
         let mut ret = Self {
             client,
@@ -137,12 +143,16 @@ impl PvpnConnection {
             should_stop: false,
             current_tun_error: None,
             network_recovery_handler: NetworkRecoveryHandler::new(network_available),
+            pcap_stream: None,
         };
         ret.client.set_private_key(&wg_private_key.into());
         ret.activate_peers();
         if !ret.network_recovery_handler.is_network_available() {
             ret.client.notify_network_down();
             ret.set_state(PvpnConnectionState::WaitingForAction(WaitReason::WaitingForNetwork))
+        }
+        if let Some(pcap_file_info) = pcap_file_info {
+            ret.start_packet_capture(pcap_file_info);
         }
         ret
     }
@@ -195,9 +205,21 @@ impl PvpnConnection {
                 PvpnMessage::UpdateWgPrivateKey(wg_private_key) => {
                     self.client.set_private_key(&wg_private_key.into());
                 },
+                PvpnMessage::StartPacketCapture(file_info) => {
+                    self.start_packet_capture(file_info);
+                }
+                PvpnMessage::StopPacketCapture => {
+                    self.client.set_packet_capture_enabled(false);
+                    self.pcap_stream = None
+                }
             }
         }
         !self.should_stop
+    }
+
+    fn start_packet_capture(&mut self, file_info: PcapFileInfo) {
+        self.pcap_stream = Some(PcapStream::new(file_info));
+        self.client.set_packet_capture_enabled(true);
     }
 
     fn pull_from_client(&mut self) {
@@ -353,11 +375,22 @@ impl PvpnConnection {
     }
 
     fn handle_write(&mut self, stream_id: StreamId, data: Vec<u8>) {
-        if let Some(stream) = self.streams.get_stream(stream_id) {
-            let write_result = stream.write(data);
-            self.handle_stream_write_result(stream_id, "write", &write_result);
-        } else {
-            log::error!("stream {:?} not found", stream_id);
+        match stream_id {
+            StreamId::PCAP_STREAM_ID => {
+                if let Some(stream) = &mut self.pcap_stream {
+                    stream.write(&data);
+                } else {
+                    log::error!("write to pcap stream but pcap capture is not started");
+                }
+            }
+            _ => {
+                if let Some(stream) = self.streams.get_stream(stream_id) {
+                    let write_result = stream.write(data);
+                    self.handle_stream_write_result(stream_id, "write", &write_result);
+                } else {
+                    log::error!("stream {:?} not found", stream_id);
+                }
+            }
         }
     }
 

@@ -22,6 +22,7 @@ use pvpnclient::vpn::{WireguardPrivateKey};
 use pvpnclient::{Deadline, TunnelInfo};
 use pvpnclient::Client;
 use pvpnclient::{Action, PvpnReturn, StreamId, Task};
+use pvpnclient::id::CaptureId;
 use pvpnclient::peer::{Peer, PeerAddr};
 use pvpnclient::stats::TunnelStats;
 use crate::connection::time::{ClientMonotonicFactory, ClientRealtimeFactory};
@@ -43,6 +44,7 @@ pub trait PvpnClient {
     fn notify_network_down(&mut self);
     fn get_stats(&mut self) -> Option<TunnelStats>;
     fn monotonic_now(&self) -> Instant;
+    fn set_packet_capture_enabled(&mut self, enabled: bool) -> CaptureId;
 }
 pub(crate) struct PvpnClientImpl<'a> {
     c: Client<'a>,
@@ -149,5 +151,15 @@ impl <'a> PvpnClient for PvpnClientImpl<'a> {
 
     fn monotonic_now(&self) -> Instant {
         self.monotonic_factory.now()
+    }
+
+    fn set_packet_capture_enabled(&mut self, enabled: bool) -> CaptureId {
+        let capture_id = if enabled {
+            self.c.capture_packet()
+        } else {
+            self.c.stop_capture_packet()
+        };
+        self.handle_result(&capture_id);
+        capture_id.value
     }
 }

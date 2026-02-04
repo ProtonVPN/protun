@@ -122,6 +122,7 @@ internal class ConnectionManager(
                         wgPrivateKey = config.clientED25519PrivateKeyBase64.decodeBase64(),
                         peers = config.peers.toUniFFI(),
                         networkAvailable = networkAvailable,
+                        pcapFile = null,
                     ),
                     tunFd = tunFd.detachFd(),
                     stateChangeCallback = stateChangeCallback,

@@ -138,6 +138,16 @@ impl Connection {
     pub fn disconnect(&self) {
         (self.send_pvpn_message)(PvpnMessage::Disconnect);
     }
+    
+    #[cfg_attr(feature = "uniffi", uniffi::method)]
+    pub fn start_packet_capture(&self, pcap_file: PcapFileInfo) {
+        (self.send_pvpn_message)(PvpnMessage::StartPacketCapture(pcap_file));
+    }
+
+    #[cfg_attr(feature = "uniffi", uniffi::method)]
+    pub fn stop_packet_capture(&self) {
+        (self.send_pvpn_message)(PvpnMessage::StopPacketCapture);
+    }
 }
 
 /// Part of the interface specific to local-agent mode.
@@ -170,6 +180,7 @@ pub struct InitialConnectionConfig {
     pub wg_private_key: WgClientPrivateKey,
     pub peers: Vec<PeerInfo>,
     pub network_available: bool,
+    pub pcap_file: Option<PcapFileInfo>,
     #[cfg(feature = "local-agent")]
     pub local_agent: Option<InitialLocalAgentConfig>,
 }
@@ -241,4 +252,17 @@ pub struct LocalAgentClientCert {
     pub cert_pem: String,
     /// Client certificate private key in PEM format.
     pub private_key_pem: String,
+}
+
+#[cfg_attr(feature = "uniffi", derive(uniffi::Enum))]
+pub enum PcapFileInfo {
+    Path { path: String, mode: FileWriteMode },
+    #[cfg(feature = "unix")]
+    Fd(i32),
+}
+
+#[cfg_attr(feature = "uniffi", derive(uniffi::Enum))]
+pub enum FileWriteMode {
+    Append,
+    Overwrite,
 }

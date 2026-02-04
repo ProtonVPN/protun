@@ -162,6 +162,7 @@ pub(crate) fn prepare_connection_test(
         peers,
         wg_private_key: WgClientPrivateKey(private_key),
         network_available,
+        pcap_file: None,
     };
     let (connection, join_handle) = Connection::connect_internal(
         Box::new(waker),
