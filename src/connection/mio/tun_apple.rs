@@ -26,6 +26,18 @@ use crate::connection::streams::{Stream, StreamResult};
 
 const APPLE_TUN_PACKET_HEADER_LEN: usize = 4;
 const APPLE_WRITE_BUFFER_SIZE: usize = 2048;
+const AF_INET: u8 = libc::AF_INET as u8;
+const AF_INET6: u8 = libc::AF_INET6 as u8;
+
+// Helper to extract the IP version from the IP packet and return appropriate address family value
+fn address_family(byte: u8) -> Result<u8, io::Error> {
+    let ip_version = byte >> 4;
+    match ip_version {
+        4 => Ok(AF_INET),
+        6 => Ok(AF_INET6),
+        _ => Err(io::Error::new(io::ErrorKind::InvalidData, format!("Invalid IP version: {}", ip_version)))
+    }
+}
 
 /// Apple-specific implementation of [MioStream] for the tun device.
 pub(crate) struct TunStreamApple {
@@ -76,9 +88,16 @@ impl Stream for TunStreamApple {
     }
 
     fn write(&mut self, data: Vec<u8>) -> StreamResult {
-        // Reuse write buffer, insert packet header (AF_INET=2) then data
+        let af = match data.first()
+            .ok_or_else(|| io::Error::new(io::ErrorKind::InvalidData, "Empty packet"))
+            .and_then(|&byte| address_family(byte))
+            {
+                Ok(af) => af,
+                Err(e) => return StreamResult::Err(e),
+            };
+
         self.write_buffer.clear();
-        self.write_buffer.extend_from_slice(&[0, 0, 0, 2]); // TODO: Handle AF_INET6
+        self.write_buffer.extend_from_slice(&[0, 0, 0, af]);
         self.write_buffer.extend_from_slice(&data);
 
         let total_len = self.write_buffer.len();
