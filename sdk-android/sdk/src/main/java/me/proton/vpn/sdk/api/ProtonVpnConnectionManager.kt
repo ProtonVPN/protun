@@ -22,6 +22,7 @@ package me.proton.vpn.sdk.api
 import android.os.Parcelable
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.parcelize.Parcelize
+import java.io.File
 
 /**
  * ProtonVPN connection manager. Provides methods to establish, manage and track VPN connection to
@@ -54,6 +55,13 @@ interface ProtonVpnConnectionManager {
     fun updateInterfaceConfig(interfaceConfig: InterfaceConfig)
     fun updatePeers(peers: List<Peer>)
     fun updateClientPrivateKey(clientED25519PrivateKeyBase64: String)
+
+    /**
+     * Enable or disable packet capture of VPN traffic. When enabled, VPN traffic will be logged
+     * to the specified [pcapFile]. To stop capturing, call this method with `null`.
+     */
+    fun setPacketCaptureEnabled(pcapFile: PcapFile?)
+
     fun disconnect()
 
     /**
@@ -85,4 +93,19 @@ data class InitialConfig(
      * (IP, protocol, ports) based on peer priority and reachability in current network conditions.
      */
     val peers: List<Peer>,
+
+    /**
+     * If not null, VPN traffic will be logged to the specified PCAP file.
+     * @see also [ProtonVpnConnectionManager.setPacketCaptureEnabled] for enabling/disabling PCAP
+     * capture dynamically.
+     */
+    val pcapFile: PcapFile? = null,
 ): Parcelable
+
+/**
+ * Information about PCAP file for VPN traffic capture.
+ */
+sealed interface PcapFile : Parcelable {
+    @Parcelize data class Fd(val fd: Int) : PcapFile
+    @Parcelize data class Path(val path: File, val append: Boolean) : PcapFile
+}

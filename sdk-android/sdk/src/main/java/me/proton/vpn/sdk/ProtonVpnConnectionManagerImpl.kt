@@ -31,6 +31,7 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.launch
 import me.proton.vpn.sdk.api.InitialConfig
 import me.proton.vpn.sdk.api.InterfaceConfig
+import me.proton.vpn.sdk.api.PcapFile
 import me.proton.vpn.sdk.api.Peer
 import me.proton.vpn.sdk.api.ProtonVpnConnectionManager
 import me.proton.vpn.sdk.api.VpnConnectionState
@@ -119,6 +120,12 @@ internal class ProtonVpnConnectionManagerImpl(
     override fun updateClientPrivateKey(clientED25519PrivateKeyBase64: String) {
         mainScope.launch {
             sendAction(ProTunVpnService.VpnAction.Update.ClientPrivateKey(clientED25519PrivateKeyBase64))
+        }
+    }
+
+    override fun setPacketCaptureEnabled(pcapFile: PcapFile?) {
+        mainScope.launch {
+            sendAction(ProTunVpnService.VpnAction.Update.PacketCapture(pcapFile))
         }
     }
 
