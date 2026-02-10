@@ -30,6 +30,9 @@ import me.proton.vpn.sdk.service.usecases.EstablishTun
 import me.proton.vpn.sdk.service.usecases.EstablishTunImpl
 import me.proton.vpn.sdk.service.usecases.NetworkObserver
 import me.proton.vpn.sdk.service.usecases.NetworkObserverImpl
+import uniffi.protun.ClientLogger
+import uniffi.protun.LogLevel
+import uniffi.protun.initLogger
 
 fun interface WallClockMs {
     operator fun invoke(): Long
@@ -47,6 +50,18 @@ internal object DependencyContainer {
     @SuppressLint("StaticFieldLeak")
     private var _appContext: Context? = null
     private var _wallClockMs: WallClockMs? = null
+    private var _nativeLogLevel: LogLevel? = null
+
+    // Use lazy field to get synchronized initialization of native logger.
+    private val nativeLogger by lazy {
+        _nativeLogLevel?.let { nativeLogLevel ->
+            initLogger(nativeLogLevel, object : ClientLogger {
+                override fun log(level: LogLevel, message: String) {
+                    logger.log(level, message)
+                }
+            })
+        }
+    }
 
     fun initialize(
         context: Context,
@@ -54,12 +69,19 @@ internal object DependencyContainer {
         notificationFactory: ForegroundServiceNotificationFactory,
         systemEventHandler: SystemEventHandler,
         wallClockMs: WallClockMs = WallClockMs { System.currentTimeMillis() },
+        nativeLogLevel: LogLevel?
     ) {
         _appContext = context.applicationContext
         _logger = logger
         _notificationFactory = notificationFactory
         _systemEventHandler = systemEventHandler
         _wallClockMs = wallClockMs
+        _nativeLogLevel = nativeLogLevel
+    }
+
+    fun ensureNativeLogInitialized() {
+        // Access lazy field to make sure it's initialized.
+        nativeLogger
     }
 
     val isInitialized get() = _appContext != null

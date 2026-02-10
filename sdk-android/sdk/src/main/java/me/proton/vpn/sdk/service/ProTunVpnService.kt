@@ -73,6 +73,7 @@ internal class ProTunVpnService : VpnService() {
             return
         }
 
+        DependencyContainer.ensureNativeLogInitialized()
         logger.log(LogLevel.INFO, "ProTunVpnService onCreate")
         socketProtectCallback = ProTunSocketProtectCallback(logger, WeakReference(this))
         binder = ProTunVpnServiceBinder(logger, WeakReference(this))

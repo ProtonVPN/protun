@@ -84,16 +84,9 @@ class ProtonVpnSdk private constructor(
                 context = appContext,
                 logger = dependencies.logger,
                 notificationFactory = dependencies.notificationFactory,
-                systemEventHandler = dependencies.systemEventHandler
+                systemEventHandler = dependencies.systemEventHandler,
+                nativeLogLevel = nativeLogLevel.takeIf { includeNativeLogs },
             )
-
-            if (includeNativeLogs) {
-                initLogger(nativeLogLevel, object : ClientLogger {
-                    override fun log(level: LogLevel, message: String) {
-                        dependencies.logger.log(level, message)
-                    }
-                })
-            }
 
             return sdk
         }

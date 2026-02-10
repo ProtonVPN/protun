@@ -28,6 +28,10 @@ static mut MAX_LOG_LEVEL: log::Level = log::Level::Info;
 /// [logger] callback for the client to receive log messages.
 #[cfg_attr(feature = "uniffi", uniffi::export)]
 pub fn init_logger(level: LogLevel, logger: Box<dyn ClientLogger>) {
+    if CLIENT_LOGGER.read().unwrap().is_some() {
+        log::error!("init_logger: Already initialized. Ignoring.");
+        return;
+    }
     unsafe {
         env::set_var("RUST_BACKTRACE", "full");
         MAX_LOG_LEVEL = level.clone().into();
