@@ -28,31 +28,35 @@ static mut MAX_LOG_LEVEL: log::Level = log::Level::Info;
 /// [logger] callback for the client to receive log messages.
 #[cfg_attr(feature = "uniffi", uniffi::export)]
 pub fn init_logger(level: LogLevel, logger: Box<dyn ClientLogger>) {
-    if CLIENT_LOGGER.read().unwrap().is_some() {
-        log::error!("init_logger: Already initialized. Ignoring.");
-        return;
+    if let Ok(mut logger_write) = CLIENT_LOGGER.try_write() {
+        if logger_write.is_some() {
+            log::error!("init_logger: Already initialized. Ignoring.");
+            return;
+        }
+        unsafe {
+            env::set_var("RUST_BACKTRACE", "full");
+            MAX_LOG_LEVEL = level.clone().into();
+        };
+        let previous_panic_hook = panic::take_hook();
+        panic::set_hook(Box::new(move |info| {
+            log::error!("Panic in rust:\n{info}");
+            let backtrace = Backtrace::capture();
+            log::error!("Rust backtrace:\n{backtrace}");
+            previous_panic_hook(info);
+        }));
+        logger_write.replace(logger);
+        log::set_logger(&LOGGER).unwrap();
+        let max_level = match level {
+            LogLevel::Trace => log::LevelFilter::Trace,
+            LogLevel::Debug => log::LevelFilter::Debug,
+            LogLevel::Info => log::LevelFilter::Info,
+            LogLevel::Warn => log::LevelFilter::Warn,
+            LogLevel::Error => log::LevelFilter::Error,
+        };
+        log::set_max_level(max_level);
+    } else {
+        log::error!("init_logger: Already initializing. Ignoring.");
     }
-    unsafe {
-        env::set_var("RUST_BACKTRACE", "full");
-        MAX_LOG_LEVEL = level.clone().into();
-    };
-    let previous_panic_hook = panic::take_hook();
-    panic::set_hook(Box::new(move |info| {
-        log::error!("Panic in rust:\n{info}");
-        let backtrace = Backtrace::capture();
-        log::error!("Rust backtrace:\n{backtrace}");
-        previous_panic_hook(info);
-    }));
-    CLIENT_LOGGER.write().unwrap().replace(logger);
-    log::set_logger(&LOGGER).unwrap();
-    let max_level = match level {
-        LogLevel::Trace => log::LevelFilter::Trace,
-        LogLevel::Debug => log::LevelFilter::Debug,
-        LogLevel::Info => log::LevelFilter::Info,
-        LogLevel::Warn => log::LevelFilter::Warn,
-        LogLevel::Error => log::LevelFilter::Error,
-    };
-    log::set_max_level(max_level);
 }
 
 #[cfg_attr(feature = "uniffi", uniffi::export(callback_interface))]
