@@ -23,6 +23,7 @@ import android.content.Context
 import android.content.Intent
 import android.net.VpnService
 import android.os.Binder
+import android.os.Build
 import android.os.Parcel
 import android.os.Parcelable
 import android.util.Log
@@ -120,6 +121,9 @@ internal class ProTunVpnService : VpnService() {
                 when (vpnAction) {
                     is VpnAction.Connect -> {
                         manager.connect(vpnAction.config, Builder(), socketProtectCallback)
+                        if (Build.VERSION.SDK_INT >= 29) {
+                            logger.log(LogLevel.INFO, "ProTunVpnService always-on=${isAlwaysOn} kill-switch=${isLockdownEnabled}")
+                        }
                         true
                     }
                     VpnAction.Disconnect -> {
