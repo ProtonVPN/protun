@@ -17,22 +17,23 @@
 
 use std::{env, panic, sync::RwLock};
 use std::backtrace::Backtrace;
+use std::sync::Once;
 use log::Log;
 
+static INIT_ONCE: Once = Once::new();
 static LOGGER: ProTunLogger = ProTunLogger;
 static CLIENT_LOGGER: RwLock<Option<Box<dyn ClientLogger>>> = RwLock::new(None);
 static mut MAX_LOG_LEVEL: log::Level = log::Level::Info;
 
-/// Initialize the logger and backtrace. Should be called only once by the client.
+/// Initialize the logger and backtrace. It's thread safe and can be called multiple times, but
+/// only the first call will succeed, all subsequent calls will be ignored.
 /// [level] min log level to be logged.
 /// [logger] callback for the client to receive log messages.
 #[cfg_attr(feature = "uniffi", uniffi::export)]
 pub fn init_logger(level: LogLevel, logger: Box<dyn ClientLogger>) {
-    if let Ok(mut logger_write) = CLIENT_LOGGER.try_write() {
-        if logger_write.is_some() {
-            log::error!("init_logger: Already initialized. Ignoring.");
-            return;
-        }
+    let mut initialized = false;
+    INIT_ONCE.call_once(|| {
+        initialized = true;
         unsafe {
             env::set_var("RUST_BACKTRACE", "full");
             MAX_LOG_LEVEL = level.clone().into();
@@ -44,7 +45,7 @@ pub fn init_logger(level: LogLevel, logger: Box<dyn ClientLogger>) {
             log::error!("Rust backtrace:\n{backtrace}");
             previous_panic_hook(info);
         }));
-        logger_write.replace(logger);
+        CLIENT_LOGGER.write().unwrap().replace(logger);
         log::set_logger(&LOGGER).unwrap();
         let max_level = match level {
             LogLevel::Trace => log::LevelFilter::Trace,
@@ -54,8 +55,9 @@ pub fn init_logger(level: LogLevel, logger: Box<dyn ClientLogger>) {
             LogLevel::Error => log::LevelFilter::Error,
         };
         log::set_max_level(max_level);
-    } else {
-        log::error!("init_logger: Already initializing. Ignoring.");
+    });
+    if !initialized {
+        log::warn!("init_logger: Already initialized. Ignoring.");
     }
 }
 
