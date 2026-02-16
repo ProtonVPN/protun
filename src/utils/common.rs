@@ -1,4 +1,4 @@
-// Copyright (c) 2025 Proton AG
+// Copyright (c) 2026 Proton AG
 //
 // This file is part of ProtonVPN.
 //
@@ -15,13 +15,11 @@
 // You should have received a copy of the GNU General Public License
 // along with ProtonVPN.  If not, see <https://www.gnu.org/licenses/>.
 
-#[cfg(feature = "mio")]
-mod dummy_protocol;
+use std::net::Ipv6Addr;
 
-#[cfg(feature = "mio")]
-mod test_helpers;
-
-mod test_clocks;
-
-#[cfg(feature = "mio")]
-mod dummy_connection_tests;
+pub fn option_ipv6addr_to_string(option_ipv6_addr: &Option<Ipv6Addr>) -> String {
+    match option_ipv6_addr {
+        Some(ipv6_addr) => ipv6_addr.to_string(),
+        None => "".to_string(),
+    }
+}

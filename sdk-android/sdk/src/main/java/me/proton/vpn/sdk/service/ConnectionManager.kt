@@ -108,7 +108,8 @@ internal class ConnectionManager(
     fun connect(
         config: InitialConfig,
         builder: VpnService.Builder,
-        socketProtectCallback: ProTunSocketProtectCallback
+        socketProtectCallback: ProTunSocketProtectCallback,
+        statsCallback: ProTunStatsCallback
     ) {
         if (activeConnection != null)
             clearConnection(VpnConnectionState.Connecting(emptyList()))
@@ -130,6 +131,7 @@ internal class ConnectionManager(
                     tunFd = tunFd.detachFd(),
                     stateChangeCallback = stateChangeCallback,
                     socketFdAvailableCallback = socketProtectCallback,
+                    statsCallback = statsCallback
                 )
                 activeConnection = ActiveConnection(
                     connection = nativeConnection,

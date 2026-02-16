@@ -43,6 +43,8 @@ import kotlinx.coroutines.flow.launchIn
 import kotlinx.coroutines.flow.onEach
 import kotlinx.parcelize.Parcelize
 import me.proton.vpn.sdk.api.PcapFile
+import uniffi.protun.ConnectionStats
+import uniffi.protun.ConnectionStatsCallback
 import uniffi.protun.LogLevel
 import uniffi.protun.OnSocketFdAvailableCallback
 import java.lang.ref.WeakReference
@@ -57,6 +59,7 @@ internal class ProTunVpnService : VpnService() {
     private val serviceScope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
     private var binder: ProTunVpnServiceBinder? = null
     lateinit var socketProtectCallback: ProTunSocketProtectCallback
+    lateinit var statsCallback: ProTunStatsCallback
 
     // Dependencies provided via DependencyContainer (initialized via ProtonVpnSdk.create())
     private val manager: ConnectionManager by lazy { DependencyContainer.connectionManager }
@@ -77,6 +80,7 @@ internal class ProTunVpnService : VpnService() {
         DependencyContainer.ensureNativeLogInitialized()
         logger.log(LogLevel.INFO, "ProTunVpnService onCreate")
         socketProtectCallback = ProTunSocketProtectCallback(logger, WeakReference(this))
+        statsCallback = ProTunStatsCallback()
         binder = ProTunVpnServiceBinder(logger, WeakReference(this))
         manager.init(serviceScope)
         manager.state.onEach {
@@ -120,7 +124,7 @@ internal class ProTunVpnService : VpnService() {
                 val vpnAction = requireNotNull(intent.getParcelableExtra<VpnAction>(VPN_ACTION_EXTRA))
                 when (vpnAction) {
                     is VpnAction.Connect -> {
-                        manager.connect(vpnAction.config, Builder(), socketProtectCallback)
+                        manager.connect(vpnAction.config, Builder(), socketProtectCallback, statsCallback)
                         if (Build.VERSION.SDK_INT >= 29) {
                             logger.log(LogLevel.INFO, "ProTunVpnService always-on=${isAlwaysOn} kill-switch=${isLockdownEnabled}")
                         }
@@ -259,5 +263,11 @@ internal class ProTunSocketProtectCallback(
     override fun onSocketFdAvailable(socketFd: Int) {
         val success = weakService.get()?.protect(socketFd) == true
         logger.log(LogLevel.INFO, "ProTunVpnService protect socket($socketFd) success: $success")
+    }
+}
+
+internal class ProTunStatsCallback: ConnectionStatsCallback {
+    override fun onStatsResponse(stats: ConnectionStats) {
+        //TODO: implement
     }
 }

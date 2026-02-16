@@ -40,7 +40,15 @@ use crate::{
         },
     },
 };
+use crate::api::connection::{ConnectionStats, ConnectionStatsCallback};
 use super::test_clocks::{TestMonotonicClock, TestRealtimeClock};
+
+pub(crate) struct TestConnectionStatsCallback;
+impl ConnectionStatsCallback for TestConnectionStatsCallback {
+    fn on_stats_response(&self, _stats: ConnectionStats) {
+        // No-op in tests
+    }
+}
 
 pub(crate) struct TestStateChangedCallback {
     on_state_updated: mpsc::Sender<State>,
@@ -171,10 +179,11 @@ pub(crate) fn prepare_connection_test(
                 create_udp_tun_stream(client_tun_socket_addr, tun_socket_addr).unwrap();
             let streams = MioStreams::new(tun_stream, socket_factory, poll)
                 .expect("Failed to create mio streams");
-            Box::new(streams)
+            Ok(Box::new(streams))
         },
         move || Box::new(DummyPvpnClient::new(monotonic_clock_clone, realtime_clock_clone)),
         Arc::new(TestStateChangedCallback::new(state_updated_sender)),
+        Box::new(TestConnectionStatsCallback),
         config,
     );
 

@@ -17,9 +17,9 @@
 
 use std::{net::IpAddr, str::FromStr};
 
-use pvpnclient::vpn::{WireguardPublicKey, WireguardPrivateKey};
+use pvpnclient::{stats::TunnelStats, vpn::{WireguardPrivateKey, WireguardPublicKey}};
 
-use crate::api::connection::{CLIENT_PRIV_KEY_SIZE_BYTES, PEER_PUB_KEY_SIZE_BYTES, IpAddress, WgClientPrivateKey, WgPeerPublicKey};
+use crate::api::connection::{CLIENT_PRIV_KEY_SIZE_BYTES, ConnectionStats, IpAddress, PEER_PUB_KEY_SIZE_BYTES, WgClientPrivateKey, WgPeerPublicKey};
 
 #[cfg(feature = "uniffi")]
 uniffi::custom_type!(WgClientPrivateKey, Vec<u8>);
@@ -93,5 +93,17 @@ impl TryFrom<String> for IpAddress {
 impl From<IpAddress> for String {
     fn from(value: IpAddress) -> Self {
         value.0.to_string()
+    }
+}
+
+impl From<TunnelStats> for ConnectionStats {
+    fn from(value: TunnelStats) -> Self {
+        ConnectionStats {
+            received_bytes: value.rx,
+            sent_bytes: value.tx,
+            time_since_last_handshake: value.time_since_last_handshake,
+            estimated_loss: value.estimated_loss,
+            estimated_round_trip_time: value.estimated_rtt,
+        }
     }
 }

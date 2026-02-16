@@ -6,3 +6,5 @@ src/uniffi/
 .vscode/
 out/
 Cargo.lock
+/.vs
+csharp_uniffi_output

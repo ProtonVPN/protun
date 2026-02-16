@@ -1,3 +1,9 @@
+[bindings.csharp]
+cdylib_name = "protun"
+namespace = "ProtonVPN.ProTun.Generated"
+global_methods_class_name = "ProTunApi"
+access_modifier = "public"
+
 [bindings.kotlin]
 cdylib_name = "protun"
 

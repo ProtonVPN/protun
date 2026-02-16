@@ -15,13 +15,16 @@
 // You should have received a copy of the GNU General Public License
 // along with ProtonVPN.  If not, see <https://www.gnu.org/licenses/>.
 
-pub mod connection;
-pub mod logger;
-pub mod state;
-pub mod type_conversions;
+#[cfg(test)]
+mod tests;
+
+#[cfg(feature = "windows")]
+pub mod windows;
 
 #[cfg(feature = "unix")]
 pub mod connection_unix;
 
-#[cfg(test)]
-mod tests;
+pub mod connection;
+pub mod logger;
+pub mod state;
+pub mod type_conversions;

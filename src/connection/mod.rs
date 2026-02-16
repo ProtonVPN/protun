@@ -37,3 +37,6 @@ pub(crate) mod mio;
 
 #[cfg(feature = "mio")]
 pub(crate) type CreateTunStream = Box<dyn FnOnce () -> Box<dyn MioStream> + Send + 'static>;
+
+#[cfg(feature = "windows")]
+pub(crate) mod windows;

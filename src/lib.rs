@@ -23,3 +23,4 @@ pub(crate) mod local_agent;
 
 pub mod api;
 pub(crate) mod connection;
+pub(crate) mod utils;

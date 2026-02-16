@@ -1,4 +1,4 @@
-// Copyright (c) 2025 Proton AG
+// Copyright (c) 2026 Proton AG
 //
 // This file is part of ProtonVPN.
 //
@@ -15,13 +15,8 @@
 // You should have received a copy of the GNU General Public License
 // along with ProtonVPN.  If not, see <https://www.gnu.org/licenses/>.
 
-#[cfg(feature = "mio")]
-mod dummy_protocol;
-
-#[cfg(feature = "mio")]
-mod test_helpers;
-
-mod test_clocks;
-
-#[cfg(feature = "mio")]
-mod dummy_connection_tests;
+pub(crate) mod helpers;
+pub(crate) mod streams;
+pub(crate) mod tcp;
+pub(crate) mod tun_windows;
+pub(crate) mod udp;

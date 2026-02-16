@@ -85,7 +85,6 @@ impl Stream for TunStreamUnix {
     }
 
     fn write_from_buffer(&mut self) -> StreamResult {
-        //TODO: is buffer needed for tun?
         StreamResult::Ok { bytes_count: 0, would_block: false, pending_write: false }
     }
 }

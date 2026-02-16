@@ -1,4 +1,4 @@
-// Copyright (c) 2025 Proton AG
+// Copyright (c) 2026 Proton AG
 //
 // This file is part of ProtonVPN.
 //
@@ -15,13 +15,13 @@
 // You should have received a copy of the GNU General Public License
 // along with ProtonVPN.  If not, see <https://www.gnu.org/licenses/>.
 
-#[cfg(feature = "mio")]
-mod dummy_protocol;
+use windows::core::GUID;
 
-#[cfg(feature = "mio")]
-mod test_helpers;
+pub const WINTUN_FILE_NAME: &'static str = "wintun.dll";
 
-mod test_clocks;
+pub const ADAPTER_GUID_STR: &str = "{9BEB3451-4026-4F8A-8762-8F608B124FEC}";
+pub const ADAPTER_GUID_U128: u128 = 207251590231051553767137937883512590316u128; // Obtained from Uuid::parse_str(ADAPTER_GUID_STR).unwrap().as_u128()
+pub const ADAPTER_GUID: GUID = GUID::from_u128(ADAPTER_GUID_U128);
 
-#[cfg(feature = "mio")]
-mod dummy_connection_tests;
+pub const ADAPTER_NAME: &'static str = "ProTUN";
+pub const ADAPTER_DESCRIPTION: &'static str = "Proton VPN Windows";

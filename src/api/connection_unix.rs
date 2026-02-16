@@ -21,6 +21,7 @@ use crate::{
     api::connection::{Connection, InitialConnectionConfig, StateChangedCallback},
     connection::{mio::{socket_factory_unix::SocketFactoryUnix, streams::MioStreams}, pvpn_client::PvpnClientImpl, pvpn_connection::PvpnMessage},
 };
+use crate::api::connection::ConnectionStatsCallback;
 
 #[cfg(feature = "apple")]
 type TunStreamUnixType = crate::connection::mio::tun_apple::TunStreamApple;
@@ -39,6 +40,7 @@ impl Connection {
         tun_fd: i32,
         state_change_callback: Box<dyn StateChangedCallback>,
         socket_fd_available_callback: Option<Box<dyn OnSocketFdAvailableCallback>>,
+        stats_callback: Box<dyn ConnectionStatsCallback>
     ) -> Self {
         let socket_factory = Box::new(SocketFactoryUnix::new(socket_fd_available_callback));
         let (poll, waker) = MioStreams::create_mio_poll_with_waker().expect("Failed to create mio poll");
@@ -47,7 +49,7 @@ impl Connection {
             move || {
                 let tun_stream = Box::new(TunStreamUnixType::new(tun_fd));
                 let streams = MioStreams::new(tun_stream, socket_factory, poll).expect("Failed to create mio streams");
-                Box::new(streams)
+                Ok(Box::new(streams))
             },
             move || {
                 Box::new(
@@ -59,6 +61,7 @@ impl Connection {
                 )
             },
             state_change_callback.into(),
+            stats_callback,
             config,
         ).0
     }

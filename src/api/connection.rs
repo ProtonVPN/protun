@@ -15,7 +15,7 @@
 // You should have received a copy of the GNU General Public License
 // along with ProtonVPN.  If not, see <https://www.gnu.org/licenses/>.
 
-use std::{net::IpAddr, sync::Arc, thread::JoinHandle};
+use std::{io::Error, net::IpAddr, sync::Arc, thread::JoinHandle, time::Duration};
 
 #[cfg(feature = "local-agent")]
 use {
@@ -38,6 +38,7 @@ pub const PEER_PUB_KEY_SIZE_BYTES: usize = 32;
 pub struct WgClientPrivateKey(pub [u8; CLIENT_PRIV_KEY_SIZE_BYTES]);
 
 /// Wrapper around IpAddr to be used in uniffi.
+#[derive(Copy, Clone, Eq, PartialEq, Hash, PartialOrd, Ord)]
 pub struct IpAddress(pub IpAddr);
 
 /// [PEER_PUB_KEY_SIZE_BYTES] bytes long peer public key.
@@ -76,9 +77,10 @@ impl Connection {
     /// Helper constructor to be used by platform-specific ones.
     pub(crate) fn connect_internal(
         poll_waker: Box<dyn PollWaker + Send + Sync>,
-        create_streams: impl FnOnce() -> Box<dyn Streams> + Send + 'static,
+        create_streams: impl FnOnce() -> Result<Box<dyn Streams>, Error> + Send + 'static,
         create_client: impl FnOnce() -> Box<dyn PvpnClient> + Send + 'static,
         state_change_callback: Arc<dyn StateChangedCallback>,
+        stats_callback: Box<dyn ConnectionStatsCallback>,
         config: InitialConnectionConfig,
     ) -> (Self, JoinHandle<()>) {
         #[cfg(not(feature = "local-agent"))]
@@ -95,6 +97,7 @@ impl Connection {
             create_streams,
             create_client,
             pvpn_state_change_callback,
+            stats_callback,
             config,
         );
         (Self {
@@ -147,6 +150,11 @@ impl Connection {
     #[cfg_attr(feature = "uniffi", uniffi::method)]
     pub fn stop_packet_capture(&self) {
         (self.send_pvpn_message)(PvpnMessage::StopPacketCapture);
+    }
+    
+    #[cfg_attr(feature = "uniffi", uniffi::method)]
+    pub fn get_stats(&self) {
+        (self.send_pvpn_message)(PvpnMessage::RequestStats);
     }
 }
 
@@ -217,6 +225,23 @@ pub struct PrivateKeyUpdateInfo {
 #[cfg_attr(feature = "uniffi", uniffi::export(callback_interface))]
 pub trait StateChangedCallback: Send + Sync {
     fn on_state_changed(&self, state: State);
+}
+
+/// Callback interface for receiving connection statistics. Avoid doing heavy work in the
+/// callback to avoid blocking the connection thread.
+#[cfg_attr(feature = "uniffi", uniffi::export(callback_interface))]
+pub trait ConnectionStatsCallback: Send + Sync {
+    fn on_stats_response(&self, stats: ConnectionStats);
+}
+
+#[cfg_attr(feature = "uniffi", derive(uniffi::Record))]
+#[derive(Debug, Default, Clone, Copy, PartialEq)]
+pub struct ConnectionStats {
+    pub received_bytes: u64,
+    pub sent_bytes: u64,
+    pub time_since_last_handshake: Duration,
+    pub estimated_loss: f32,
+    pub estimated_round_trip_time: Duration,
 }
 
 /// Represents a candidate peer for connection.
