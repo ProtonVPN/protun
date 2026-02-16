@@ -279,14 +279,25 @@ pub struct LocalAgentClientCert {
     pub private_key_pem: String,
 }
 
+#[cfg_attr(feature = "uniffi", derive(uniffi::Record))]
+#[derive(Debug)]
+pub struct PcapFileInfo {
+    pub file_type: PcapFile,
+
+    /// File size limit in bytes. When the limit is reached, the library will stop writing.
+    pub max_bytes: Option<u64>
+}
+
 #[cfg_attr(feature = "uniffi", derive(uniffi::Enum))]
-pub enum PcapFileInfo {
+#[derive(Debug)]
+pub enum PcapFile {
     Path { path: String, mode: FileWriteMode },
     #[cfg(feature = "unix")]
     Fd(i32),
 }
 
 #[cfg_attr(feature = "uniffi", derive(uniffi::Enum))]
+#[derive(Debug)]
 pub enum FileWriteMode {
     Append,
     Overwrite,

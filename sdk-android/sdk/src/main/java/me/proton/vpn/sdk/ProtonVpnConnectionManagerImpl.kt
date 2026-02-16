@@ -31,7 +31,7 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.launch
 import me.proton.vpn.sdk.api.InitialConfig
 import me.proton.vpn.sdk.api.InterfaceConfig
-import me.proton.vpn.sdk.api.PcapFile
+import me.proton.vpn.sdk.api.PacketCaptureInfo
 import me.proton.vpn.sdk.api.Peer
 import me.proton.vpn.sdk.api.ProtonVpnConnectionManager
 import me.proton.vpn.sdk.api.VpnConnectionState
@@ -123,9 +123,9 @@ internal class ProtonVpnConnectionManagerImpl(
         }
     }
 
-    override fun setPacketCaptureEnabled(pcapFile: PcapFile?) {
+    override fun setPacketCaptureEnabled(packetCaptureInfo: PacketCaptureInfo?) {
         mainScope.launch {
-            sendAction(ProTunVpnService.VpnAction.Update.PacketCapture(pcapFile))
+            sendAction(ProTunVpnService.VpnAction.Update.PacketCapture(packetCaptureInfo))
         }
     }
 

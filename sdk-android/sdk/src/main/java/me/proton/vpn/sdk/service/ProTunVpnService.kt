@@ -42,7 +42,7 @@ import kotlinx.coroutines.cancel
 import kotlinx.coroutines.flow.launchIn
 import kotlinx.coroutines.flow.onEach
 import kotlinx.parcelize.Parcelize
-import me.proton.vpn.sdk.api.PcapFile
+import me.proton.vpn.sdk.api.PacketCaptureInfo
 import uniffi.protun.ConnectionStats
 import uniffi.protun.ConnectionStatsCallback
 import uniffi.protun.LogLevel
@@ -150,7 +150,7 @@ internal class ProTunVpnService : VpnService() {
                                     manager.updateClientPrivateKey(vpnAction.clientED25519PrivateKeyPem)
 
                                 is VpnAction.Update.PacketCapture ->
-                                    manager.setPacketCaptureEnabled(vpnAction.pcapFile)
+                                    manager.setPacketCaptureEnabled(vpnAction.packetCaptureInfo)
                             }
                             true
                         } else {
@@ -204,7 +204,7 @@ internal class ProTunVpnService : VpnService() {
             @Parcelize data class Interface(val interfaceConfig: InterfaceConfig) : Update
             @Parcelize data class Peers(val peers: List<Peer>) : Update
             @Parcelize data class ClientPrivateKey(val clientED25519PrivateKeyPem: String) : Update
-            @Parcelize data class PacketCapture(val pcapFile: PcapFile?) : Update
+            @Parcelize data class PacketCapture(val packetCaptureInfo: PacketCaptureInfo?) : Update
         }
     }
 

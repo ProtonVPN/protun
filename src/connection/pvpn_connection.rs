@@ -233,8 +233,16 @@ impl PvpnConnection {
     }
 
     fn start_packet_capture(&mut self, file_info: PcapFileInfo) {
-        self.pcap_stream = Some(PcapStream::new(file_info));
-        self.client.set_packet_capture_enabled(true);
+        let res = PcapStream::new(file_info);
+        match res {
+            Ok(stream) => {
+                self.pcap_stream = Some(stream);
+                self.client.set_packet_capture_enabled(true);
+            }
+            Err(e) => {
+                log::error!("failed to start packet capture: {:?}", e);
+            }
+        }
     }
 
     fn pull_from_client(&mut self) {

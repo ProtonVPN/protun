@@ -16,41 +16,55 @@
 // along with ProtonVPN.  If not, see <https://www.gnu.org/licenses/>.
 
 use std::fs::File;
+use std::io;
 use std::io::Write;
 #[cfg(feature = "unix")]
 use std::os::fd::FromRawFd;
-use crate::api::connection::{FileWriteMode, PcapFileInfo};
+use crate::api::connection::{FileWriteMode, PcapFileInfo, PcapFile};
 
 pub(crate) struct PcapStream {
     file: File,
+    size: u64,
+    max_bytes: Option<u64>,
+    at_max_size: bool,
 }
 impl PcapStream {
 
-    pub(crate) fn new(file_info: PcapFileInfo) -> Self {
-        Self {
-            file: match file_info {
-                PcapFileInfo::Path { path, mode } => {
-                    let append = match mode {
-                        FileWriteMode::Append => true,
-                        FileWriteMode::Overwrite => false,
-                    };
-                    File::options()
-                        .create(true)
-                        .write(true)
-                        .append(append)
-                        .open(path)
-                        .unwrap()
-                },
-                #[cfg(feature = "unix")]
-                PcapFileInfo::Fd(fd) => unsafe { File::from_raw_fd(fd) }
-            }
-        }
+    pub(crate) fn new(file_info: PcapFileInfo) -> Result<Self, io::Error> {
+        log::info!("starting pcap: {:?}", file_info);
+        let file = match file_info.file_type {
+            PcapFile::Path { path, mode } => {
+                let append = match mode {
+                    FileWriteMode::Append => true,
+                    FileWriteMode::Overwrite => false,
+                };
+                File::options()
+                    .create(true)
+                    .write(true)
+                    .append(append)
+                    .open(path)?
+            },
+            #[cfg(feature = "unix")]
+            PcapFile::Fd(fd) => unsafe { File::from_raw_fd(fd) },
+        };
+        let size = file.metadata().unwrap().len();
+        Ok(Self { file, size, max_bytes: file_info.max_bytes, at_max_size: false })
     }
 
     pub(crate) fn write(&mut self, data: &[u8]) {
+        if self.at_max_size {
+            return
+        }
+        if let Some(max_size) = self.max_bytes && (self.size + data.len() as u64) > max_size {
+            log::info!("pcap file reached max size, stopping writing");
+            self.at_max_size = true;
+            return
+        }
         let result = self.file.write_all(data);
         if let Err(e) = result {
             log::error!("failed to write to pcap file: {:?}", e);
+        } else {
+            self.size += data.len() as u64;
         }
     }
 }

@@ -29,7 +29,8 @@ import kotlinx.coroutines.launch
 import me.proton.vpn.sdk.api.InitialConfig
 import me.proton.vpn.sdk.api.InterfaceConfig
 import me.proton.vpn.sdk.api.Logger
-import me.proton.vpn.sdk.api.PcapFile
+import me.proton.vpn.sdk.api.PacketCaptureInfo
+import me.proton.vpn.sdk.api.PacketCaptureFile
 import me.proton.vpn.sdk.api.Peer
 import me.proton.vpn.sdk.api.PeerConnection
 import me.proton.vpn.sdk.api.VpnConnectionState
@@ -45,6 +46,7 @@ import uniffi.protun.DisconnectReason
 import uniffi.protun.FileWriteMode
 import uniffi.protun.InitialConnectionConfig
 import uniffi.protun.LogLevel
+import uniffi.protun.PcapFile
 import uniffi.protun.PcapFileInfo
 import uniffi.protun.PeerConnectionInfo
 import uniffi.protun.PeerInfo
@@ -126,7 +128,7 @@ internal class ConnectionManager(
                         wgPrivateKey = config.clientED25519PrivateKeyBase64.decodeBase64(),
                         peers = config.peers.toUniFFI(),
                         networkAvailable = networkAvailable,
-                        pcapFile = config.pcapFile?.toUniFFI(),
+                        pcapFile = config.packetCaptureInfo?.toUniFFI(),
                     ),
                     tunFd = tunFd.detachFd(),
                     stateChangeCallback = stateChangeCallback,
@@ -178,11 +180,11 @@ internal class ConnectionManager(
         )
     }
 
-    fun setPacketCaptureEnabled(pcapFile: PcapFile?) {
-        if (pcapFile == null)
+    fun setPacketCaptureEnabled(packetCaptureInfo: PacketCaptureInfo?) {
+        if (packetCaptureInfo == null)
             activeConnection?.connection?.stopPacketCapture()
         else
-            activeConnection?.connection?.startPacketCapture(pcapFile.toUniFFI())
+            activeConnection?.connection?.startPacketCapture(packetCaptureInfo.toUniFFI())
     }
 
     fun onProTunStateChange(proTunState: State) {
@@ -240,10 +242,13 @@ private fun List<Peer>.toUniFFI(): List<PeerInfo> = map { peer ->
     )
 }
 
-private fun PcapFile.toUniFFI(): PcapFileInfo = when (this) {
-    is PcapFile.Fd -> PcapFileInfo.Fd(fd)
-    is PcapFile.Path -> PcapFileInfo.Path(path.absolutePath, FileWriteMode.OVERWRITE)
-}
+private fun PacketCaptureInfo.toUniFFI(): PcapFileInfo = PcapFileInfo(
+    when (type) {
+        is PacketCaptureFile.Fd -> PcapFile.Fd(type.fd)
+        is PacketCaptureFile.Path -> PcapFile.Path(type.path.absolutePath, FileWriteMode.OVERWRITE)
+    },
+    maxBytes
+)
 
 private fun DisconnectReason.toVpnDisconnectReason(): VpnDisconnectError = when (this) {
     is DisconnectReason.TunEstablishError -> VpnDisconnectError.TunInterfaceError(message)

@@ -58,9 +58,10 @@ interface ProtonVpnConnectionManager {
 
     /**
      * Enable or disable packet capture of VPN traffic. When enabled, VPN traffic will be logged
-     * to the specified [pcapFile]. To stop capturing, call this method with `null`.
+     * to the file specified in [packetCaptureInfo]. Only to be used for debugging purposes. To stop
+     * capturing, call this method with `null`.
      */
-    fun setPacketCaptureEnabled(pcapFile: PcapFile?)
+    fun setPacketCaptureEnabled(packetCaptureInfo: PacketCaptureInfo?)
 
     fun disconnect()
 
@@ -95,17 +96,21 @@ data class InitialConfig(
     val peers: List<Peer>,
 
     /**
-     * If not null, VPN traffic will be logged to the specified PCAP file.
+     * If not null, VPN traffic will be logged to the specified PCAP file. Only to be used for
+     * debugging purposes (file will contain unencrypted VPN traffic and affect performance).
      * @see also [ProtonVpnConnectionManager.setPacketCaptureEnabled] for enabling/disabling PCAP
      * capture dynamically.
      */
-    val pcapFile: PcapFile? = null,
+    val packetCaptureInfo: PacketCaptureInfo? = null,
 ): Parcelable
 
 /**
- * Information about PCAP file for VPN traffic capture.
+ * Information about packet capture (pcap) file for debugging.
  */
-sealed interface PcapFile : Parcelable {
-    @Parcelize data class Fd(val fd: Int) : PcapFile
-    @Parcelize data class Path(val path: File, val append: Boolean) : PcapFile
+@Parcelize
+data class PacketCaptureInfo(val type: PacketCaptureFile, val maxBytes: ULong) : Parcelable
+sealed interface PacketCaptureFile : Parcelable {
+
+    @Parcelize data class Fd(val fd: Int) : PacketCaptureFile
+    @Parcelize data class Path(val path: File, val append: Boolean) : PacketCaptureFile
 }
