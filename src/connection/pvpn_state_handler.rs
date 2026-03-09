@@ -15,12 +15,8 @@
 // You should have received a copy of the GNU General Public License
 // along with ProtonVPN.  If not, see <https://www.gnu.org/licenses/>.
 
-#[cfg(not(feature = "local-agent"))]
 use std::sync::Arc;
-
-#[cfg(not(feature = "local-agent"))]
 use crate::api::{connection::StateChangedCallback, state::State};
-
 use crate::{connection::pvpn_connection::{PvpnConnectionState}};
 
 /// Trait to receive pvpn connection state changes.
@@ -29,18 +25,15 @@ pub(crate) trait PvpnConnectionStateHandler {
 }
 
 /// State handler that converts pvpn connection state to api state and forwards it to the client app.
-#[cfg(not(feature = "local-agent"))]
 pub(crate) struct PvpnToApiStateHandler {
     pub state_change_callback: Arc<dyn StateChangedCallback>,
 }
-#[cfg(not(feature = "local-agent"))]
 impl PvpnConnectionStateHandler for PvpnToApiStateHandler {
     fn on_state_changed(&self, state: &PvpnConnectionState) {
         self.state_change_callback.on_state_changed(state.clone().to_api_state());
     }
 }
 
-#[cfg(not(feature = "local-agent"))]
 impl PvpnConnectionState {
     pub fn to_api_state(self) -> State {
         match self {

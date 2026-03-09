@@ -17,13 +17,6 @@
 
 use std::{io::Error, net::IpAddr, sync::Arc, thread::JoinHandle, time::Duration};
 
-#[cfg(feature = "local-agent")]
-use {
-    local_agent_rs::AgentFeatures,
-    crate::local_agent::local_agent::{start_local_agent_task, LocalAgentMessage},
-};
-
-#[cfg(not(feature = "local-agent"))]
 use crate::connection::pvpn_state_handler::PvpnToApiStateHandler;
 
 use crate::{api::state::State, connection::pvpn_client::PvpnClient};
@@ -53,23 +46,10 @@ pub struct WgPeerPublicKey(pub [u8; PEER_PUB_KEY_SIZE_BYTES]);
 /// Connection will make a best effort to maintain VPN connection cycling through a set of candidate peers
 /// (along with ports and protocols) based on their priority and availability in current network conditions.
 /// 
-/// Connection can run in two modes:
-/// - with built-in local agent: when client passes [LocalAgentClientCert] != None.
-/// - without local agent: [LocalAgentClientCert] == None
-/// 
-/// Local agent mode is available when `local-agent` feature is enabled.
-/// 
-/// In local-agent mode, after establishing VPN connection via e.g. WireGuard, LocalAgentConnection will
-/// be established before Connection enters connected state.
-/// 
-/// In non-local-agent mode, Connection will enter connected state immediately after establishing VPN connection.
-/// 
 /// For initializing logging, see [crate::api::logger::init_logger].
 #[cfg_attr(feature = "uniffi", derive(uniffi::Object))]
 pub struct Connection {
     pub(crate) send_pvpn_message: SendPvpnMessage,
-    #[cfg(feature = "local-agent")]
-    pub(crate) send_local_agent_message: Box<dyn Fn(LocalAgentMessage) -> () + Send + Sync>,
 }
 
 impl Connection {
@@ -83,15 +63,7 @@ impl Connection {
         stats_callback: Box<dyn ConnectionStatsCallback>,
         config: InitialConnectionConfig,
     ) -> (Self, JoinHandle<()>) {
-        #[cfg(not(feature = "local-agent"))]
-        // When local agent is not enabled just translate pvpn state to api state.
         let pvpn_state_change_callback = Box::new(PvpnToApiStateHandler { state_change_callback });
-
-        // When local agent is enabled, local agent will be handling pvpn state changes.
-        #[cfg(feature = "local-agent")]
-        let (pvpn_state_change_callback, send_local_agent_message) =
-            start_local_agent_task(config.local_agent.clone(), state_change_callback);
-
         let (send_pvpn_message, join_handle) = start_pvpn_connection(
             poll_waker,
             create_streams,
@@ -100,11 +72,7 @@ impl Connection {
             stats_callback,
             config,
         );
-        (Self {
-            send_pvpn_message,
-            #[cfg(feature = "local-agent")]
-            send_local_agent_message,
-        }, join_handle)
+        (Self { send_pvpn_message }, join_handle)
     }
 }
 
@@ -122,10 +90,6 @@ impl Connection {
     #[cfg_attr(feature = "uniffi", uniffi::method)]
     pub fn update_wg_private_key(&self, info: PrivateKeyUpdateInfo) {
         (self.send_pvpn_message)(PvpnMessage::UpdateWgPrivateKey(info.wg_private_key.into()));
-        #[cfg(feature = "local-agent")]
-        if let Some(local_agent_client_cert) = info.local_agent_client_cert {
-            (self.send_local_agent_message)(LocalAgentMessage::UpdateCert(local_agent_client_cert));
-        }
     }
 
     /// Call it when connectivity or underlying network adapter(s) change
@@ -158,41 +122,13 @@ impl Connection {
     }
 }
 
-/// Part of the interface specific to local-agent mode.
-#[cfg_attr(feature = "uniffi", uniffi::export)]
-#[cfg(feature = "local-agent")]
-impl Connection {
-
-    /// Updates shared local agent features for all peers.
-    /// Some features, like AgentFeatures::Bouncing will have values specific to the peer and defined in [PeerLocalAgentInfo].
-    #[cfg_attr(feature = "uniffi", uniffi::method)]
-    pub fn update_base_features(&self, features: AgentFeatures) {
-        (self.send_local_agent_message)(LocalAgentMessage::UpdateFeatures(features));
-    }
-
-    /// Updates local agent client certificate.
-    #[cfg_attr(feature = "uniffi", uniffi::method)]
-    pub fn update_local_agent_client_cert(&self, cert: LocalAgentClientCert) {
-        (self.send_local_agent_message)(LocalAgentMessage::UpdateCert(cert));
-    }
-
-    /// Requests statistics (NetShield) from local agent.
-    #[cfg_attr(feature = "uniffi", uniffi::method)]
-    pub fn request_local_agent_stats(&self) {
-        (self.send_local_agent_message)(LocalAgentMessage::RequestStats);
-    }
-}
-
 #[cfg_attr(feature = "uniffi", derive(uniffi::Record))]
 pub struct InitialConnectionConfig {
     pub wg_private_key: WgClientPrivateKey,
     pub peers: Vec<PeerInfo>,
     pub network_available: bool,
     pub pcap_file: Option<PcapFileInfo>,
-    #[cfg(feature = "local-agent")]
-    pub local_agent: Option<InitialLocalAgentConfig>,
 }
-
 
 #[cfg_attr(feature = "uniffi", derive(uniffi::Enum))]
 #[derive(PartialEq)]
@@ -206,18 +142,8 @@ pub enum ConnectivityEvent {
 }
 
 #[cfg_attr(feature = "uniffi", derive(uniffi::Record))]
-#[cfg(feature = "local-agent")]
-#[derive(Clone)]
-pub struct InitialLocalAgentConfig {
-    pub client_cert: LocalAgentClientCert,
-    pub base_features: AgentFeatures,
-}
-
-#[cfg_attr(feature = "uniffi", derive(uniffi::Record))]
 pub struct PrivateKeyUpdateInfo {
     pub wg_private_key: WgClientPrivateKey,
-    #[cfg(feature = "local-agent")]
-    pub local_agent_client_cert: Option<LocalAgentClientCert>,
 }
 
 /// Callback interface for receiving connection state changes. Avoid doing heavy work in the
@@ -250,33 +176,12 @@ pub struct PeerInfo {
     /// Unique identifier of connected peer (as defined by client). This id will be available in
     /// connection states when given peer is connecting/connected (see peer_id in [State]).
     pub peer_id: String,
-    /// Local agent info for the peer.
-    #[cfg(feature = "local-agent")]
-    pub local_agent: Option<PeerLocalAgentInfo>,
     pub server_ip: IpAddress,
     pub server_public_key: WgPeerPublicKey,
     pub udp_ports: Vec<u16>,
     pub tcp_ports: Vec<u16>,
     pub tls_ports: Vec<u16>,
     pub priority: i32,
-}
-
-#[cfg(feature = "local-agent")]
-#[cfg_attr(all(feature = "uniffi", feature = "local-agent"), derive(uniffi::Record))]
-#[derive(Debug, Clone, PartialEq)]
-pub struct PeerLocalAgentInfo {
-    pub bouncing: Option<String>,
-    pub domain: String,
-}
-
-#[cfg(feature = "local-agent")]
-#[cfg_attr(all(feature = "uniffi", feature = "local-agent"), derive(uniffi::Record))]
-#[derive(Debug, Clone, PartialEq)]
-pub struct LocalAgentClientCert {
-    /// Client certificate in PEM format.
-    pub cert_pem: String,
-    /// Client certificate private key in PEM format.
-    pub private_key_pem: String,
 }
 
 #[cfg_attr(feature = "uniffi", derive(uniffi::Record))]

@@ -24,9 +24,6 @@ use pvpnclient::action::OpenStream;
 use pvpnclient::peer::Peer;
 use pvpnclient::vpn::{VpnProtocol, VpnStreamKind};
 
-#[cfg(feature = "local-agent")]
-use crate::api::connection::PeerLocalAgentInfo;
-
 #[cfg(feature = "mio")]
 use crate::connection::CreateTunStream;
 
@@ -47,10 +44,7 @@ pub(crate) enum PvpnConnectionState {
     Disconnected(Option<DisconnectReason>),
     Connecting(Vec<PeerConnectionInfo>),
     WaitingForAction(WaitReason),
-    Connected(
-        PeerConnectionInfo,
-        #[cfg(feature = "local-agent")] Option<PeerLocalAgentInfo>,
-    ),
+    Connected(PeerConnectionInfo),
 }
 
 /// Messages that can be sent to the connection loop.
@@ -492,8 +486,6 @@ fn to_client_state(tunnel_info: Option<TunnelInfo>, last_tun_error: Option<Strin
         Some(TunnelInfo::Connected { protocol, peer_addr, peer, .. }) => {
             PvpnConnectionState::Connected(
                 get_peer_connection_info(&peer, &peer_addr, protocol),
-                #[cfg(feature = "local-agent")]
-                agent_info(peers, &get_peer_id(&peer, &peer_addr))
             )
         }
         Some(TunnelInfo::Connecting { protocol, peer_addr, peer, .. }) => {
@@ -517,17 +509,6 @@ fn get_peer_connection_info(peer: &Peer, peer_addr: &SocketAddr, protocol: VpnPr
         protocol: protocol.into(),
         port: peer_addr.port(),
     }
-}
-
-#[cfg(feature = "local-agent")]
-fn agent_info(peers: &Vec<PeerInfo>, peer_id: &str) -> Option<PeerLocalAgentInfo> {
-    for peer in peers {
-        if peer.peer_id == peer_id {
-            return peer.local_agent.clone();
-        }
-    }
-    log::info!("peer_id not found: {:?}", peer_id);
-    None
 }
 
 impl From<VpnProtocol> for Protocol {

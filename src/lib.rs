@@ -18,9 +18,6 @@
 #[cfg(feature = "uniffi")]
 uniffi::setup_scaffolding!();
 
-#[cfg(feature = "local-agent")]
-pub(crate) mod local_agent;
-
 pub mod api;
 pub(crate) mod connection;
 pub(crate) mod utils;

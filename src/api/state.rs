@@ -15,9 +15,6 @@
 // You should have received a copy of the GNU General Public License
 // along with ProtonVPN.  If not, see <https://www.gnu.org/licenses/>.
 
-#[cfg(feature = "local-agent")]
-use local_agent_rs::StatusMessage;
-
 /// State of the VPN connection.
 #[cfg_attr(feature = "uniffi", derive(uniffi::Enum))]
 #[derive(Debug)]
@@ -41,13 +38,7 @@ pub enum State {
     /// Connection to [peer] is established.
     Connected {
         peer: PeerConnectionInfo,
-        #[cfg(feature = "local-agent")]
-        status: Option<StatusMessage>
     },
-
-    /// Connected with VPN server, but hard-jailed by local agent.
-    #[cfg(feature = "local-agent")]
-    HardJailed { peer: PeerConnectionInfo, status: StatusMessage },
 }
 
 #[cfg_attr(feature = "uniffi", derive(uniffi::Enum))]

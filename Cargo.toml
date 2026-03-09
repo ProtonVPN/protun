@@ -14,7 +14,6 @@ panic = "abort"
 
 [dependencies]
 libc = { version = "0.2.180", optional = true }
-local-agent-rs = { path = "local-agent-rs/local_agent_rs", optional = true }
 log = "0.4.29"
 mio = { version = "1.1.1", features = ["net", "os-poll", "os-ext"], optional = true }
 pvpnclient = { path = "libpvpnclient" }
@@ -58,8 +57,6 @@ apple = ["unix"]
 linux = ["unix"]
 windows = ["dep:serde", "dep:serde_json", "dep:socket2", "dep:thiserror", "dep:uuid", "dep:windows", "dep:winreg", "dep:wintun", "uniffi"]
 uniffi = ["dep:uniffi"]
-local-agent = ["dep:local-agent-rs"]
-local-agent-uniffi = ["local-agent", "uniffi", "local-agent-rs/uniffi"]
 mio = ["dep:mio"]
 
 [[bin]]
