@@ -24,16 +24,17 @@ use std::os::fd::FromRawFd;
 use crate::api::connection::{FileWriteMode, PcapFileInfo, PcapFile};
 
 pub(crate) struct PcapStream {
+    pub file_info: PcapFileInfo,
     file: File,
     size: u64,
     max_bytes: Option<u64>,
-    at_max_size: bool,
+    pub at_max_size: bool,
 }
 impl PcapStream {
 
     pub(crate) fn new(file_info: PcapFileInfo) -> Result<Self, io::Error> {
         log::info!("starting pcap: {:?}", file_info);
-        let file = match file_info.file_type {
+        let file = match &file_info.file {
             PcapFile::Path { path, mode } => {
                 let append = match mode {
                     FileWriteMode::Append => true,
@@ -52,10 +53,11 @@ impl PcapStream {
                     .open(path)?
             },
             #[cfg(feature = "unix")]
-            PcapFile::Fd(fd) => unsafe { File::from_raw_fd(fd) },
+            PcapFile::Fd(fd) => unsafe { File::from_raw_fd(*fd) },
         };
-        let size = file.metadata().unwrap().len();
-        Ok(Self { file, size, max_bytes: file_info.max_bytes, at_max_size: false })
+        let size = file.metadata()?.len();
+        let max_bytes = file_info.max_bytes;
+        Ok(Self { file_info, file, size, max_bytes, at_max_size: false })
     }
 
     pub(crate) fn write(&mut self, data: &[u8]) {

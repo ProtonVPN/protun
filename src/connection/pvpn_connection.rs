@@ -35,6 +35,7 @@ use crate::{
     connection::{pvpn_client::PvpnClient, streams::{PollResult, PollWaker, StreamResult, Streams}},
 };
 use crate::api::connection::{ConnectivityEvent, EventCallback, PcapFileInfo, StateChangedCallback};
+use crate::api::events::{CaptureStopReason, Event};
 use crate::api::state::State;
 use crate::connection::network_recovery_handler::NetworkRecoveryHandler;
 use crate::connection::pcap_stream::PcapStream;
@@ -160,7 +161,15 @@ impl PvpnConnection {
             self.update_state();
             self.poll_from_streams();
         };
+        self.on_connection_loop_end();
+    }
 
+    fn on_connection_loop_end(&mut self) {
+        // End packet capture if it's still running.
+        if let Some(_) = &self.pcap_stream {
+            self.stop_packet_capture(|file| CaptureStopReason::Disconnected { file });
+        }
+        // Make sure to enter disconnected state.
         match &self.state {
             State::Disconnected { .. } => {}
             _ => self.set_state(State::Disconnected { error: None })
@@ -205,12 +214,11 @@ impl PvpnConnection {
                     self.start_packet_capture(file_info);
                 },
                 PvpnMessage::StopPacketCapture => {
-                    self.client.set_packet_capture_enabled(false);
-                    self.pcap_stream = None
+                    self.stop_packet_capture(|file| CaptureStopReason::Request { file });
                 },
                 PvpnMessage::RequestStats => {
                     if let Some(stats) = self.client.get_stats() {
-                        self.event_callback.on_event(stats.into());
+                        self.emit_event(stats.into());
                     }
                 }
             }
@@ -219,15 +227,27 @@ impl PvpnConnection {
     }
 
     fn start_packet_capture(&mut self, file_info: PcapFileInfo) {
-        let res = PcapStream::new(file_info);
+        let res = PcapStream::new(file_info.clone());
         match res {
             Ok(stream) => {
                 self.pcap_stream = Some(stream);
                 self.client.set_packet_capture_enabled(true);
+                self.emit_event(Event::PacketCaptureStarted { info: file_info });
             }
             Err(e) => {
                 log::error!("failed to start packet capture: {:?}", e);
             }
+        }
+    }
+
+    fn stop_packet_capture(&mut self, reason: fn(PcapFileInfo) -> CaptureStopReason) {
+        self.client.set_packet_capture_enabled(false);
+        if let Some(stream) = &self.pcap_stream {
+            let file = stream.file_info.clone();
+            self.pcap_stream = None;
+            self.emit_event(Event::PacketCaptureStopped { reason: reason(file) });
+        } else {
+            self.emit_event(Event::PacketCaptureStopped { reason: CaptureStopReason::AlreadyStopped });
         }
     }
 
@@ -259,12 +279,12 @@ impl PvpnConnection {
                         }
                     }
 
-                    // Actions below can only be passed to libvpnclient
+                    // The actions below can only be passed to the libpvpnclient
                     ActionKind::Read(_) |
                     ActionKind::Error(_) |
                     ActionKind::Done => {
-                        log::error!("Unexpected action pulled from libvpnclient: {:?}", kind);
-                        debug_assert!(false, "Unexpected action pulled from libvpnclient: {:?}", kind);
+                        log::error!("Unexpected action pulled from libpvpnclient: {:?}", kind);
+                        debug_assert!(false, "Unexpected action pulled from libpvpnclient: {:?}", kind);
                     }
                 }
             }
@@ -388,6 +408,9 @@ impl PvpnConnection {
             StreamId::PCAP_STREAM_ID => {
                 if let Some(stream) = &mut self.pcap_stream {
                     stream.write(&data);
+                    if stream.at_max_size {
+                        self.stop_packet_capture(|file| CaptureStopReason::MaxSizeReached { file });
+                    }
                 } else {
                     log::error!("write to pcap stream but pcap capture is not started");
                 }
@@ -435,7 +458,7 @@ impl PvpnConnection {
         }
     }
 
-    fn handle_stream_error(&mut self, stream_id: StreamId, err: &std::io::Error) {
+    fn handle_stream_error(&mut self, stream_id: StreamId, err: &Error) {
         if stream_id > StreamId::TUN_STREAM_ID { // Only notify libpvpnclient about socket errors
             self.network_recovery_handler.on_stream_error(stream_id, err, self.client.monotonic_now());
             self.client.push_error(stream_id, err.kind());
@@ -462,6 +485,11 @@ impl PvpnConnection {
             self.state = state;
             self.state_change_callback.on_state_changed(self.state.clone());
         }
+    }
+
+    fn emit_event(&self, event: Event) {
+        log::info!("emitting event: {:?}", event);
+        self.event_callback.on_event(event);
     }
 }
 

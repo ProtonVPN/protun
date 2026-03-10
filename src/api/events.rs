@@ -16,6 +16,7 @@
 // along with ProtonVPN.  If not, see <https://www.gnu.org/licenses/>.
 
 use std::time::Duration;
+use crate::api::connection::PcapFileInfo;
 
 /// Connection events emitted by the library and delivered via [crate::api::connection::EventCallback]
 #[cfg_attr(feature = "uniffi", derive(uniffi::Enum))]
@@ -28,5 +29,17 @@ pub enum Event {
         time_since_last_handshake: Duration,
         estimated_loss: f32,
         estimated_round_trip_time: Duration,
-    }
+    },
+    
+    PacketCaptureStarted { info: PcapFileInfo },
+    PacketCaptureStopped { reason: CaptureStopReason },
+}
+
+#[cfg_attr(feature = "uniffi", derive(uniffi::Enum))]
+#[derive(Debug)]
+pub enum CaptureStopReason {
+    Request { file: PcapFileInfo },
+    MaxSizeReached { file: PcapFileInfo },
+    Disconnected { file: PcapFileInfo },
+    AlreadyStopped,
 }

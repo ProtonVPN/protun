@@ -173,16 +173,16 @@ pub struct PeerInfo {
 }
 
 #[cfg_attr(feature = "uniffi", derive(uniffi::Record))]
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub struct PcapFileInfo {
-    pub file_type: PcapFile,
+    pub file: PcapFile,
 
     /// File size limit in bytes. When the limit is reached, the library will stop writing.
     pub max_bytes: Option<u64>
 }
 
 #[cfg_attr(feature = "uniffi", derive(uniffi::Enum))]
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub enum PcapFile {
     Path { path: String, mode: FileWriteMode },
     #[cfg(feature = "unix")]
@@ -190,7 +190,7 @@ pub enum PcapFile {
 }
 
 #[cfg_attr(feature = "uniffi", derive(uniffi::Enum))]
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub enum FileWriteMode {
     Append,
     Overwrite,
