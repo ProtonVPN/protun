@@ -19,7 +19,8 @@ use std::{net::IpAddr, str::FromStr};
 
 use pvpnclient::{stats::TunnelStats, vpn::{WireguardPrivateKey, WireguardPublicKey}};
 
-use crate::api::connection::{CLIENT_PRIV_KEY_SIZE_BYTES, ConnectionStats, IpAddress, PEER_PUB_KEY_SIZE_BYTES, WgClientPrivateKey, WgPeerPublicKey};
+use crate::api::connection::{CLIENT_PRIV_KEY_SIZE_BYTES, IpAddress, PEER_PUB_KEY_SIZE_BYTES, WgClientPrivateKey, WgPeerPublicKey};
+use crate::api::events::Event;
 
 #[cfg(feature = "uniffi")]
 uniffi::custom_type!(WgClientPrivateKey, Vec<u8>);
@@ -96,9 +97,9 @@ impl From<IpAddress> for String {
     }
 }
 
-impl From<TunnelStats> for ConnectionStats {
+impl From<TunnelStats> for Event {
     fn from(value: TunnelStats) -> Self {
-        ConnectionStats {
+        Event::ConnectionStats {
             received_bytes: value.rx,
             sent_bytes: value.tx,
             time_since_last_handshake: value.time_since_last_handshake,

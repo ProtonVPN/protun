@@ -20,7 +20,7 @@ use std::net::IpAddr;
 use std::sync::Arc;
 use pvpnclient::os_interface::rand::CryptoSeedProvider;
 
-use crate::api::connection::{ConnectionStatsCallback, IpAddress};
+use crate::api::connection::{EventCallback, IpAddress};
 use crate::api::windows::protun_error::ProTunFatalError;
 use crate::api::windows::state_changed_callback::WindowsStateChangedCallback;
 use crate::connection::pvpn_client::PvpnClientImpl;
@@ -102,7 +102,7 @@ impl WindowsConnection {
         connection_config: InitialConnectionConfig,
         adapter_config: AdapterConfig, 
         client_state_change_callback: Box<dyn StateChangedCallback>,
-        stats_callback: Box<dyn ConnectionStatsCallback>
+        event_callback: Box<dyn EventCallback>
     ) -> Result<Self, ProTunFatalError> {
         let server_ips: Vec<IpAddr> = connection_config.peers.iter().map(|peer| peer.server_ip.0).collect();
         let tun: Arc<WinTunSession> = Arc::new(WinTunSession::create(server_ips, adapter_config)?);
@@ -128,7 +128,7 @@ impl WindowsConnection {
                 )
             },
             state_change_callback.into(),
-            stats_callback,
+            event_callback,
             connection_config,
         ).0);
 

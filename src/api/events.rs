@@ -1,4 +1,4 @@
-// Copyright (c) 2025 Proton AG
+// Copyright (c) 2026 Proton AG
 //
 // This file is part of ProtonVPN.
 //
@@ -15,17 +15,18 @@
 // You should have received a copy of the GNU General Public License
 // along with ProtonVPN.  If not, see <https://www.gnu.org/licenses/>.
 
-#[cfg(test)]
-mod tests;
+use std::time::Duration;
 
-#[cfg(feature = "windows")]
-pub mod windows;
+/// Connection events emitted by the library and delivered via [crate::api::connection::EventCallback]
+#[cfg_attr(feature = "uniffi", derive(uniffi::Enum))]
+#[derive(Debug)]
+pub enum Event {
 
-#[cfg(feature = "unix")]
-pub mod connection_unix;
-
-pub mod connection;
-pub mod events;
-pub mod logger;
-pub mod state;
-pub mod type_conversions;
+    ConnectionStats {
+        received_bytes: u64,
+        sent_bytes: u64,
+        time_since_last_handshake: Duration,
+        estimated_loss: f32,
+        estimated_round_trip_time: Duration,
+    }
+}

@@ -15,13 +15,14 @@
 // You should have received a copy of the GNU General Public License
 // along with ProtonVPN.  If not, see <https://www.gnu.org/licenses/>.
 
-use std::{io::Error, net::IpAddr, sync::Arc, thread::JoinHandle, time::Duration};
+use std::{io::Error, net::IpAddr, sync::Arc, thread::JoinHandle};
 
 use crate::connection::pvpn_state_handler::PvpnToApiStateHandler;
 
-use crate::{api::state::State, connection::pvpn_client::PvpnClient};
 use crate::connection::pvpn_connection::{start_pvpn_connection, PvpnMessage, SendPvpnMessage};
 use crate::connection::streams::{PollWaker, Streams};
+use crate::{api::state::State, connection::pvpn_client::PvpnClient};
+use crate::api::events::Event;
 
 pub const CLIENT_PRIV_KEY_SIZE_BYTES: usize = 32;
 pub const PEER_PUB_KEY_SIZE_BYTES: usize = 32;
@@ -60,7 +61,7 @@ impl Connection {
         create_streams: impl FnOnce() -> Result<Box<dyn Streams>, Error> + Send + 'static,
         create_client: impl FnOnce() -> Box<dyn PvpnClient> + Send + 'static,
         state_change_callback: Arc<dyn StateChangedCallback>,
-        stats_callback: Box<dyn ConnectionStatsCallback>,
+        event_callback: Box<dyn EventCallback>,
         config: InitialConnectionConfig,
     ) -> (Self, JoinHandle<()>) {
         let pvpn_state_change_callback = Box::new(PvpnToApiStateHandler { state_change_callback });
@@ -69,7 +70,7 @@ impl Connection {
             create_streams,
             create_client,
             pvpn_state_change_callback,
-            stats_callback,
+            event_callback,
             config,
         );
         (Self { send_pvpn_message }, join_handle)
@@ -153,21 +154,11 @@ pub trait StateChangedCallback: Send + Sync {
     fn on_state_changed(&self, state: State);
 }
 
-/// Callback interface for receiving connection statistics. Avoid doing heavy work in the
-/// callback to avoid blocking the connection thread.
+/// Callback interface for receiving events. Avoid doing heavy work in the callback to avoid
+/// blocking the connection thread (delegate to another thread if needed).
 #[cfg_attr(feature = "uniffi", uniffi::export(callback_interface))]
-pub trait ConnectionStatsCallback: Send + Sync {
-    fn on_stats_response(&self, stats: ConnectionStats);
-}
-
-#[cfg_attr(feature = "uniffi", derive(uniffi::Record))]
-#[derive(Debug, Default, Clone, Copy, PartialEq)]
-pub struct ConnectionStats {
-    pub received_bytes: u64,
-    pub sent_bytes: u64,
-    pub time_since_last_handshake: Duration,
-    pub estimated_loss: f32,
-    pub estimated_round_trip_time: Duration,
+pub trait EventCallback: Send + Sync {
+    fn on_event(&self, event: Event);
 }
 
 /// Represents a candidate peer for connection.

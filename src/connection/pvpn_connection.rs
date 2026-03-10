@@ -18,6 +18,7 @@
 use std::{io::Error, net::SocketAddr, sync::mpsc, thread::{self, JoinHandle}};
 use std::cmp::min;
 use std::io::ErrorKind;
+use std::sync::Arc;
 use std::time::Duration;
 use pvpnclient::{Action, ActionKind, StreamId, TunnelInfo};
 use pvpnclient::action::OpenStream;
@@ -29,12 +30,12 @@ use crate::connection::CreateTunStream;
 
 use crate::{
     api::{
-        connection::{ConnectionStatsCallback, InitialConnectionConfig, PeerInfo, WgClientPrivateKey},
+        connection::{InitialConnectionConfig, PeerInfo, WgClientPrivateKey},
         state::{DisconnectReason, PeerConnectionInfo, Protocol, WaitReason},
     },
     connection::{pvpn_client::PvpnClient, pvpn_state_handler::PvpnConnectionStateHandler, streams::{PollResult, PollWaker, StreamResult, Streams}},
 };
-use crate::api::connection::{ConnectivityEvent, PcapFileInfo};
+use crate::api::connection::{ConnectivityEvent, EventCallback, PcapFileInfo};
 use crate::connection::network_recovery_handler::NetworkRecoveryHandler;
 use crate::connection::pcap_stream::PcapStream;
 
@@ -74,7 +75,7 @@ pub(crate) fn start_pvpn_connection(
     create_streams: impl FnOnce () -> Result<Box<dyn Streams>, Error> + Send + 'static,
     create_client: impl FnOnce () -> Box<dyn PvpnClient> + Send + 'static,
     pvpn_state_change_callback: Box<dyn PvpnConnectionStateHandler + Send + 'static>,
-    stats_callback: Box<dyn ConnectionStatsCallback>,
+    event_callback: Box<dyn EventCallback>,
     config: InitialConnectionConfig,
 ) -> (SendPvpnMessage, JoinHandle<()>) {
     let (message_sender, message_receiver) = mpsc::channel();
@@ -86,7 +87,7 @@ pub(crate) fn start_pvpn_connection(
                     client,
                     streams,
                     pvpn_state_change_callback,
-                    stats_callback,
+                    event_callback,
                     message_receiver,
                     config.network_available,
                     config.peers,
@@ -113,7 +114,7 @@ struct PvpnConnection {
     client: Box<dyn PvpnClient>,
     streams: Box<dyn Streams>,
     state_change_callback: Box<dyn PvpnConnectionStateHandler>,
-    stats_callback: Box<dyn ConnectionStatsCallback>,
+    event_callback: Box<dyn EventCallback>,
     message_receiver: mpsc::Receiver<PvpnMessage>,
     state: PvpnConnectionState,
     peers: Vec<PeerInfo>,
@@ -128,7 +129,7 @@ impl PvpnConnection {
         client: Box<dyn PvpnClient>,
         streams: Box<dyn Streams>,
         state_change_callback: Box<dyn PvpnConnectionStateHandler>,
-        stats_callback: Box<dyn ConnectionStatsCallback>,
+        event_callback: Box<dyn EventCallback>,
         message_receiver: mpsc::Receiver<PvpnMessage>,
         network_available: bool,
         peers: Vec<PeerInfo>,
@@ -139,7 +140,7 @@ impl PvpnConnection {
             client,
             streams,
             state_change_callback,
-            stats_callback,
+            event_callback,
             message_receiver,
             state: PvpnConnectionState::Disconnected(None),
             peers,
@@ -218,7 +219,7 @@ impl PvpnConnection {
                 },
                 PvpnMessage::RequestStats => {
                     if let Some(stats) = self.client.get_stats() {
-                        self.stats_callback.on_stats_response(stats.into());
+                        self.event_callback.on_event(stats.into());
                     }
                 }
             }

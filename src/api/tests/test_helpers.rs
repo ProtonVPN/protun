@@ -20,6 +20,7 @@ use std::{
         mpsc::{self, Receiver}, Arc
     }, thread::JoinHandle, time::Duration
 };
+use std::sync::Mutex;
 use std::time::Instant;
 use mio::net::UdpSocket;
 use rand::Rng;
@@ -40,13 +41,21 @@ use crate::{
         },
     },
 };
-use crate::api::connection::{ConnectionStats, ConnectionStatsCallback};
+use crate::api::connection::EventCallback;
+use crate::api::events::Event;
 use super::test_clocks::{TestMonotonicClock, TestRealtimeClock};
 
-pub(crate) struct TestConnectionStatsCallback;
-impl ConnectionStatsCallback for TestConnectionStatsCallback {
-    fn on_stats_response(&self, _stats: ConnectionStats) {
-        // No-op in tests
+pub(crate) struct TestEventCallback {
+    captured_events: Mutex<Vec<Event>>
+}
+impl TestEventCallback {
+    fn new() -> Self {
+        Self { captured_events: Mutex::new(vec![]) }
+    }
+}
+impl EventCallback for TestEventCallback {
+    fn on_event(&self, event: Event) {
+        self.captured_events.lock().unwrap().push(event);
     }
 }
 
@@ -183,7 +192,7 @@ pub(crate) fn prepare_connection_test(
         },
         move || Box::new(DummyPvpnClient::new(monotonic_clock_clone, realtime_clock_clone)),
         Arc::new(TestStateChangedCallback::new(state_updated_sender)),
-        Box::new(TestConnectionStatsCallback),
+        Box::new(TestEventCallback::new()),
         config,
     );
 
