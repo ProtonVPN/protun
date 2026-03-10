@@ -17,7 +17,7 @@
 
 /// State of the VPN connection.
 #[cfg_attr(feature = "uniffi", derive(uniffi::Enum))]
-#[derive(Debug)]
+#[derive(Clone, Debug, PartialEq)]
 pub enum State {
 
     /// Disconnected. [error] will be set if disconnection happened due to an error.

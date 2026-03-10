@@ -27,7 +27,6 @@ mod constants;
 pub(crate) mod pcap_stream;
 pub(crate) mod pvpn_client;
 pub(crate) mod pvpn_connection;
-pub(crate) mod pvpn_state_handler;
 pub(crate) mod streams;
 pub(crate) mod time;
 pub(crate) mod util;

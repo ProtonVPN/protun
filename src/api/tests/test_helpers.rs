@@ -17,7 +17,7 @@
 
 use std::{
     io::{self, Read, Write}, net::{Ipv4Addr, SocketAddr}, os::fd::AsRawFd, str::FromStr, sync::{
-        mpsc::{self, Receiver}, Arc
+        mpsc::{self, Receiver}
     }, thread::JoinHandle, time::Duration
 };
 use std::sync::Mutex;
@@ -191,7 +191,7 @@ pub(crate) fn prepare_connection_test(
             Ok(Box::new(streams))
         },
         move || Box::new(DummyPvpnClient::new(monotonic_clock_clone, realtime_clock_clone)),
-        Arc::new(TestStateChangedCallback::new(state_updated_sender)),
+        Box::new(TestStateChangedCallback::new(state_updated_sender)),
         Box::new(TestEventCallback::new()),
         config,
     );

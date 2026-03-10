@@ -15,14 +15,12 @@
 // You should have received a copy of the GNU General Public License
 // along with ProtonVPN.  If not, see <https://www.gnu.org/licenses/>.
 
-use std::{io::Error, net::IpAddr, sync::Arc, thread::JoinHandle};
+use std::{io::Error, net::IpAddr, thread::JoinHandle};
 
-use crate::connection::pvpn_state_handler::PvpnToApiStateHandler;
-
+use crate::api::events::Event;
 use crate::connection::pvpn_connection::{start_pvpn_connection, PvpnMessage, SendPvpnMessage};
 use crate::connection::streams::{PollWaker, Streams};
 use crate::{api::state::State, connection::pvpn_client::PvpnClient};
-use crate::api::events::Event;
 
 pub const CLIENT_PRIV_KEY_SIZE_BYTES: usize = 32;
 pub const PEER_PUB_KEY_SIZE_BYTES: usize = 32;
@@ -60,16 +58,15 @@ impl Connection {
         poll_waker: Box<dyn PollWaker + Send + Sync>,
         create_streams: impl FnOnce() -> Result<Box<dyn Streams>, Error> + Send + 'static,
         create_client: impl FnOnce() -> Box<dyn PvpnClient> + Send + 'static,
-        state_change_callback: Arc<dyn StateChangedCallback>,
+        state_change_callback: Box<dyn StateChangedCallback>,
         event_callback: Box<dyn EventCallback>,
         config: InitialConnectionConfig,
     ) -> (Self, JoinHandle<()>) {
-        let pvpn_state_change_callback = Box::new(PvpnToApiStateHandler { state_change_callback });
         let (send_pvpn_message, join_handle) = start_pvpn_connection(
             poll_waker,
             create_streams,
             create_client,
-            pvpn_state_change_callback,
+            state_change_callback,
             event_callback,
             config,
         );

@@ -18,7 +18,6 @@
 use std::{io::Error, net::SocketAddr, sync::mpsc, thread::{self, JoinHandle}};
 use std::cmp::min;
 use std::io::ErrorKind;
-use std::sync::Arc;
 use std::time::Duration;
 use pvpnclient::{Action, ActionKind, StreamId, TunnelInfo};
 use pvpnclient::action::OpenStream;
@@ -31,22 +30,14 @@ use crate::connection::CreateTunStream;
 use crate::{
     api::{
         connection::{InitialConnectionConfig, PeerInfo, WgClientPrivateKey},
-        state::{DisconnectReason, PeerConnectionInfo, Protocol, WaitReason},
+        state::{PeerConnectionInfo, Protocol, WaitReason},
     },
-    connection::{pvpn_client::PvpnClient, pvpn_state_handler::PvpnConnectionStateHandler, streams::{PollResult, PollWaker, StreamResult, Streams}},
+    connection::{pvpn_client::PvpnClient, streams::{PollResult, PollWaker, StreamResult, Streams}},
 };
-use crate::api::connection::{ConnectivityEvent, EventCallback, PcapFileInfo};
+use crate::api::connection::{ConnectivityEvent, EventCallback, PcapFileInfo, StateChangedCallback};
+use crate::api::state::State;
 use crate::connection::network_recovery_handler::NetworkRecoveryHandler;
 use crate::connection::pcap_stream::PcapStream;
-
-/// State of the pvpn connection.
-#[derive(Clone, PartialEq, Debug)]
-pub(crate) enum PvpnConnectionState {
-    Disconnected(Option<DisconnectReason>),
-    Connecting(Vec<PeerConnectionInfo>),
-    WaitingForAction(WaitReason),
-    Connected(PeerConnectionInfo),
-}
 
 /// Messages that can be sent to the connection loop.
 pub(crate) enum PvpnMessage {
@@ -74,7 +65,7 @@ pub(crate) fn start_pvpn_connection(
     poll_waker: Box<dyn PollWaker + Send + Sync>,
     create_streams: impl FnOnce () -> Result<Box<dyn Streams>, Error> + Send + 'static,
     create_client: impl FnOnce () -> Box<dyn PvpnClient> + Send + 'static,
-    pvpn_state_change_callback: Box<dyn PvpnConnectionStateHandler + Send + 'static>,
+    state_change_callback: Box<dyn StateChangedCallback>,
     event_callback: Box<dyn EventCallback>,
     config: InitialConnectionConfig,
 ) -> (SendPvpnMessage, JoinHandle<()>) {
@@ -86,7 +77,7 @@ pub(crate) fn start_pvpn_connection(
                 let mut connection = PvpnConnection::new(
                     client,
                     streams,
-                    pvpn_state_change_callback,
+                    state_change_callback,
                     event_callback,
                     message_receiver,
                     config.network_available,
@@ -113,10 +104,10 @@ const STREAM_BUFFER_SIZE: usize = 65536;
 struct PvpnConnection {
     client: Box<dyn PvpnClient>,
     streams: Box<dyn Streams>,
-    state_change_callback: Box<dyn PvpnConnectionStateHandler>,
+    state_change_callback: Box<dyn StateChangedCallback>,
     event_callback: Box<dyn EventCallback>,
     message_receiver: mpsc::Receiver<PvpnMessage>,
-    state: PvpnConnectionState,
+    state: State,
     peers: Vec<PeerInfo>,
     stream_read_buffer: Box<[u8; STREAM_BUFFER_SIZE]>,
     should_stop: bool,
@@ -128,7 +119,7 @@ impl PvpnConnection {
     fn new(
         client: Box<dyn PvpnClient>,
         streams: Box<dyn Streams>,
-        state_change_callback: Box<dyn PvpnConnectionStateHandler>,
+        state_change_callback: Box<dyn StateChangedCallback>,
         event_callback: Box<dyn EventCallback>,
         message_receiver: mpsc::Receiver<PvpnMessage>,
         network_available: bool,
@@ -142,7 +133,7 @@ impl PvpnConnection {
             state_change_callback,
             event_callback,
             message_receiver,
-            state: PvpnConnectionState::Disconnected(None),
+            state: State::Disconnected { error: None },
             peers,
             stream_read_buffer: Box::new([0; STREAM_BUFFER_SIZE]),
             should_stop: false,
@@ -154,7 +145,7 @@ impl PvpnConnection {
         ret.activate_peers();
         if !ret.network_recovery_handler.is_network_available() {
             ret.client.notify_network_down();
-            ret.set_state(PvpnConnectionState::WaitingForAction(WaitReason::WaitingForNetwork))
+            ret.set_state(State::WaitingForAction { reason: WaitReason::WaitingForNetwork })
         }
         if let Some(pcap_file_info) = pcap_file_info {
             ret.start_packet_capture(pcap_file_info);
@@ -171,8 +162,8 @@ impl PvpnConnection {
         };
 
         match &self.state {
-            PvpnConnectionState::Disconnected(_) => {}
-            _ => self.set_state(PvpnConnectionState::Disconnected(None))
+            State::Disconnected { .. } => {}
+            _ => self.set_state(State::Disconnected { error: None })
         }
         log::info!("pvpn connection loop finished with state: {:?}", self.state);
     }
@@ -180,12 +171,12 @@ impl PvpnConnection {
     fn update_state(&mut self) {
         if self.network_recovery_handler.is_network_available() {
             let info = self.client.get_tunnel_info();
-            self.set_state(to_client_state(info, self.current_tun_error.clone(), &self.peers));
-            if let PvpnConnectionState::Connected(_) = &self.state {
+            self.set_state(to_client_state(info, self.current_tun_error.clone()));
+            if let State::Connected { .. } = &self.state {
                 self.network_recovery_handler.on_connected();
             }
         } else {
-            self.set_state(PvpnConnectionState::WaitingForAction(WaitReason::WaitingForNetwork))
+            self.set_state(State::WaitingForAction { reason: WaitReason::WaitingForNetwork })
         }
     }
 
@@ -440,7 +431,7 @@ impl PvpnConnection {
             self.client.notify_network_change();
         } else {
             self.client.notify_network_down();
-            self.set_state(PvpnConnectionState::WaitingForAction(WaitReason::WaitingForNetwork))
+            self.set_state(State::WaitingForAction { reason: WaitReason::WaitingForNetwork })
         }
     }
 
@@ -465,11 +456,11 @@ impl PvpnConnection {
         }
     }
 
-    fn set_state(&mut self, state: PvpnConnectionState) {
+    fn set_state(&mut self, state: State) {
         if state != self.state {
             log::info!("state: {:?}", state);
-            self.state = state.clone();
-            self.state_change_callback.on_state_changed(&self.state);
+            self.state = state;
+            self.state_change_callback.on_state_changed(self.state.clone());
         }
     }
 }
@@ -482,20 +473,20 @@ fn to_tun_error(res: &StreamResult) -> Option<String> {
     }
 }
 
-fn to_client_state(tunnel_info: Option<TunnelInfo>, last_tun_error: Option<String>, peers: &Vec<PeerInfo>) -> PvpnConnectionState {
+fn to_client_state(tunnel_info: Option<TunnelInfo>, last_tun_error: Option<String>) -> State {
     match tunnel_info {
         Some(TunnelInfo::Connected { protocol, peer_addr, peer, .. }) => {
-            PvpnConnectionState::Connected(
-                get_peer_connection_info(&peer, &peer_addr, protocol),
-            )
+            State::Connected {
+                peer: get_peer_connection_info(&peer, &peer_addr, protocol)
+            }
         }
         Some(TunnelInfo::Connecting { protocol, peer_addr, peer, .. }) => {
             match last_tun_error {
-                None => PvpnConnectionState::Connecting(vec![get_peer_connection_info(&peer, &peer_addr, protocol)]),
-                Some(error) => PvpnConnectionState::WaitingForAction(WaitReason::TunIoError { message: error })
+                None => State::Connecting { peers: vec![get_peer_connection_info(&peer, &peer_addr, protocol)] },
+                Some(error) => State::WaitingForAction { reason: WaitReason::TunIoError { message: error } }
             }
         }
-        _ => PvpnConnectionState::Connecting(vec![]),
+        _ => State::Connecting { peers: vec![] },
     }
 }
 
