@@ -15,7 +15,8 @@
 // You should have received a copy of the GNU General Public License
 // along with ProtonVPN.  If not, see <https://www.gnu.org/licenses/>.
 
-use std::fs::File;
+use std::fs::{File, create_dir_all};
+use std::path::Path;
 use std::io;
 use std::io::Write;
 #[cfg(feature = "unix")]
@@ -38,6 +39,12 @@ impl PcapStream {
                     FileWriteMode::Append => true,
                     FileWriteMode::Overwrite => false,
                 };
+
+                let path: &Path = Path::new(&path);
+                if let Some(parent) = path.parent() {
+                    create_dir_all(parent)?;
+                }
+
                 File::options()
                     .create(true)
                     .write(true)
