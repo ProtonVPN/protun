@@ -18,7 +18,7 @@
 use std::{
     io::{self, Read, Write}, net::{Ipv4Addr, SocketAddr}, os::fd::AsRawFd, str::FromStr, sync::{
         mpsc::{self, Receiver}
-    }, thread::JoinHandle, time::Duration
+    }, time::Duration
 };
 use std::sync::Mutex;
 use std::time::Instant;
@@ -78,7 +78,6 @@ pub(crate) struct ConnectionTestHelper {
     pub(crate) tun_socket: Option<std::net::UdpSocket>,
     pub(crate) state_updated_receiver: Receiver<State>,
     pub(crate) connection: Connection,
-    pub(crate) join_handle: JoinHandle<()>,
     pub(crate) monotonic_clock: TestMonotonicClock,
     pub(crate) realtime_clock: TestRealtimeClock,
 }
@@ -181,7 +180,7 @@ pub(crate) fn prepare_connection_test(
         network_available,
         pcap_file: None,
     };
-    let (connection, join_handle) = Connection::connect_internal(
+    let connection = Connection::connect_internal(
         Box::new(waker),
         move || {
             let tun_stream =
@@ -201,7 +200,6 @@ pub(crate) fn prepare_connection_test(
         tun_socket: Some(tun_socket),
         state_updated_receiver,
         connection,
-        join_handle,
         monotonic_clock,
         realtime_clock,
     }

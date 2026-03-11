@@ -74,9 +74,8 @@ fn happy_path_udp_connection() {
     assert_eq!(received_packet, data);
 
     // disconnect and make sure connection thread ends
-    helper.connection.disconnect();
+    helper.connection.disconnect_and_wait();
     helper.expect_state(|state| matches!(state, State::Disconnected { error: None }));
-    helper.join_handle.join().unwrap();
 }
 
 #[test_log::test]
@@ -118,9 +117,8 @@ fn happy_path_tcp_connection() {
     assert_eq!(received_packet, data);
 
     // disconnect and join
-    helper.connection.disconnect();
+    helper.connection.disconnect_and_wait();
     helper.expect_state(|state| matches!(state, State::Disconnected { .. }));
-    helper.join_handle.join().unwrap();
 }
 
 #[test_log::test]
@@ -146,8 +144,7 @@ fn fallback_to_another_peer() {
     helper.send_tcp(&mut tcp_server_socket2, &DummyProtocolPacket::HandshakeResponse).unwrap();
     helper.expect_state(|state| matches!(state,State::Connected { .. }));
 
-    helper.connection.disconnect();
-    helper.join_handle.join().unwrap();
+    helper.connection.disconnect_and_wait();
 }
 
 #[test_log::test]
@@ -168,8 +165,7 @@ fn connect_waiting_for_network() {
     helper.send_udp_to(&udp_server_socket, &client_addr, &DummyProtocolPacket::HandshakeResponse).unwrap();
     helper.expect_state(|state| matches!(state, State::Connected { .. }));
 
-    helper.connection.disconnect();
-    helper.join_handle.join().unwrap();
+    helper.connection.disconnect_and_wait();
 }
 
 #[test_log::test]
@@ -190,8 +186,7 @@ fn pause_and_resume_network_while_connected() {
     let client_addr2 = helper.accept_and_verify_udp_connection(&udp_server_socket);
     assert_ne!(client_addr1, client_addr2);
 
-    helper.connection.disconnect();
-    helper.join_handle.join().unwrap();
+    helper.connection.disconnect_and_wait();
 }
 
 #[test_log::test]
@@ -209,8 +204,7 @@ fn update_peer_while_connected() {
     let client_addr2 = helper.accept_and_verify_udp_connection(&udp_server_socket2);
     assert_ne!(client_addr1, client_addr2);
 
-    helper.connection.disconnect();
-    helper.join_handle.join().unwrap();
+    helper.connection.disconnect_and_wait();
 }
 
 #[test_log::test]
@@ -229,7 +223,6 @@ fn update_private_key_while_connected() {
     helper.expect_state(|state| matches!(state, State::Connected { .. }));
     assert_ne!(client_addr, new_client_addr);
 
-    helper.connection.disconnect();
-    helper.join_handle.join().unwrap();
+    helper.connection.disconnect_and_wait();
 }
 

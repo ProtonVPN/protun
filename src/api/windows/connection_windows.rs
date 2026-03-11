@@ -130,7 +130,7 @@ impl WindowsConnection {
             state_change_callback.into(),
             event_callback,
             connection_config,
-        ).0);
+        ));
 
         Ok(WindowsConnection { connection, tun })
     }

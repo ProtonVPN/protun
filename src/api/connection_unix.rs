@@ -62,7 +62,7 @@ impl Connection {
             state_change_callback.into(),
             event_callback,
             config,
-        ).0
+        )
     }
 
     /// Notifies library that file descriptor for tun device has changed.

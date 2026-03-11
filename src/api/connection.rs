@@ -16,7 +16,7 @@
 // along with ProtonVPN.  If not, see <https://www.gnu.org/licenses/>.
 
 use std::{io::Error, net::IpAddr, thread::JoinHandle};
-
+use std::sync::Mutex;
 use crate::api::events::Event;
 use crate::connection::pvpn_connection::{start_pvpn_connection, PvpnMessage, SendPvpnMessage};
 use crate::connection::streams::{PollWaker, Streams};
@@ -49,6 +49,7 @@ pub struct WgPeerPublicKey(pub [u8; PEER_PUB_KEY_SIZE_BYTES]);
 #[cfg_attr(feature = "uniffi", derive(uniffi::Object))]
 pub struct Connection {
     pub(crate) send_pvpn_message: SendPvpnMessage,
+    join_handle: Mutex<Option<JoinHandle<()>>>,
 }
 
 impl Connection {
@@ -61,7 +62,7 @@ impl Connection {
         state_change_callback: Box<dyn StateChangedCallback>,
         event_callback: Box<dyn EventCallback>,
         config: InitialConnectionConfig,
-    ) -> (Self, JoinHandle<()>) {
+    ) -> Self {
         let (send_pvpn_message, join_handle) = start_pvpn_connection(
             poll_waker,
             create_streams,
@@ -70,7 +71,7 @@ impl Connection {
             event_callback,
             config,
         );
-        (Self { send_pvpn_message }, join_handle)
+        Self { send_pvpn_message, join_handle: Mutex::new(Some(join_handle)) }
     }
 }
 
@@ -102,6 +103,18 @@ impl Connection {
     #[cfg_attr(feature = "uniffi", uniffi::method)]
     pub fn disconnect(&self) {
         (self.send_pvpn_message)(PvpnMessage::Disconnect);
+    }
+
+    /// Disconnects and waits for the connection to be fully closed.
+    #[cfg_attr(feature = "uniffi", uniffi::method)]
+    pub fn disconnect_and_wait(&self) {
+        self.disconnect();
+        if let Some(join_handle) = self.join_handle.lock().unwrap().take() {
+            match join_handle.join() {
+                Ok(_) => log::info!("disconnect_and_wait: success"),
+                Err(e) => log::error!("disconnect_and_wait: failed: {:?}", e),
+            }
+        }
     }
     
     #[cfg_attr(feature = "uniffi", uniffi::method)]
