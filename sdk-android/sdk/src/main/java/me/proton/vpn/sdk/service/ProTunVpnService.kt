@@ -27,14 +27,6 @@ import android.os.Build
 import android.os.Parcel
 import android.os.Parcelable
 import android.util.Log
-import me.proton.vpn.sdk.api.InitialConfig
-import me.proton.vpn.sdk.api.InterfaceConfig
-import me.proton.vpn.sdk.api.Logger
-import me.proton.vpn.sdk.api.ForegroundServiceNotificationFactory
-import me.proton.vpn.sdk.api.Peer
-import me.proton.vpn.sdk.api.SystemEventHandler
-import me.proton.vpn.sdk.api.VpnConnectionState
-import me.proton.vpn.sdk.internal.DependencyContainer
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -42,15 +34,24 @@ import kotlinx.coroutines.cancel
 import kotlinx.coroutines.flow.launchIn
 import kotlinx.coroutines.flow.onEach
 import kotlinx.parcelize.Parcelize
+import me.proton.vpn.sdk.api.ForegroundServiceNotificationFactory
+import me.proton.vpn.sdk.api.InitialConfig
+import me.proton.vpn.sdk.api.InterfaceConfig
+import me.proton.vpn.sdk.api.Logger
 import me.proton.vpn.sdk.api.PacketCaptureInfo
-import uniffi.protun.ConnectionStats
-import uniffi.protun.ConnectionStatsCallback
+import me.proton.vpn.sdk.api.Peer
+import me.proton.vpn.sdk.api.SystemEventHandler
+import me.proton.vpn.sdk.api.VpnConnectionState
+import me.proton.vpn.sdk.internal.DependencyContainer
+import uniffi.protun.Event
+import uniffi.protun.EventCallback
 import uniffi.protun.LogLevel
 import uniffi.protun.OnSocketFdAvailableCallback
 import java.lang.ref.WeakReference
 
 internal interface ProTunVpnServiceCallback {
     fun onStateChanged(state: VpnConnectionState)
+    fun onEvent(event: Event)
 }
 
 internal class ProTunVpnService : VpnService() {
@@ -59,7 +60,7 @@ internal class ProTunVpnService : VpnService() {
     private val serviceScope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
     private var binder: ProTunVpnServiceBinder? = null
     lateinit var socketProtectCallback: ProTunSocketProtectCallback
-    lateinit var statsCallback: ProTunStatsCallback
+    lateinit var eventCallback: ProTunEventCallback
 
     // Dependencies provided via DependencyContainer (initialized via ProtonVpnSdk.create())
     private val manager: ConnectionManager by lazy { DependencyContainer.connectionManager }
@@ -80,7 +81,7 @@ internal class ProTunVpnService : VpnService() {
         DependencyContainer.ensureNativeLogInitialized()
         logger.log(LogLevel.INFO, "ProTunVpnService onCreate")
         socketProtectCallback = ProTunSocketProtectCallback(logger, WeakReference(this))
-        statsCallback = ProTunStatsCallback()
+        eventCallback = ProTunEventCallback(WeakReference(this))
         binder = ProTunVpnServiceBinder(logger, WeakReference(this))
         manager.init(serviceScope)
         manager.state.onEach {
@@ -124,7 +125,7 @@ internal class ProTunVpnService : VpnService() {
                 val vpnAction = requireNotNull(intent.getParcelableExtra<VpnAction>(VPN_ACTION_EXTRA))
                 when (vpnAction) {
                     is VpnAction.Connect -> {
-                        manager.connect(vpnAction.config, Builder(), socketProtectCallback, statsCallback)
+                        manager.connect(vpnAction.config, Builder(), socketProtectCallback, eventCallback)
                         if (Build.VERSION.SDK_INT >= 29) {
                             logger.log(LogLevel.INFO, "ProTunVpnService always-on=${isAlwaysOn} kill-switch=${isLockdownEnabled}")
                         }
@@ -151,6 +152,9 @@ internal class ProTunVpnService : VpnService() {
 
                                 is VpnAction.Update.PacketCapture ->
                                     manager.setPacketCaptureEnabled(vpnAction.packetCaptureInfo)
+
+                                VpnAction.Update.RequestConnectionStats ->
+                                    manager.requestConnectionStats()
                             }
                             true
                         } else {
@@ -194,6 +198,10 @@ internal class ProTunVpnService : VpnService() {
         super.onRevoke()
     }
 
+    fun onEvent(event: Event) {
+        binder?.notifyEvent(event)
+    }
+
     val state get(): VpnConnectionState = manager.state.value
 
     sealed interface VpnAction : Parcelable {
@@ -205,6 +213,7 @@ internal class ProTunVpnService : VpnService() {
             @Parcelize data class Peers(val peers: List<Peer>) : Update
             @Parcelize data class ClientPrivateKey(val clientED25519PrivateKeyPem: String) : Update
             @Parcelize data class PacketCapture(val packetCaptureInfo: PacketCaptureInfo?) : Update
+            @Parcelize data object RequestConnectionStats : Update
         }
     }
 
@@ -241,6 +250,12 @@ internal class ProTunVpnServiceBinder(
         callbacks.forEach { it.onStateChanged(state) }
     }
 
+    fun notifyEvent(event: Event) {
+        callbacks.forEach { callback ->
+            callback.onEvent(event)
+        }
+    }
+
     //TODO(VPNAND-2287): workaround for onRevoke not being called when another VPN takes over, but
     //   might not work on all devices/versions
     override fun onTransact(code: Int, data: Parcel, reply: Parcel?, flags: Int): Boolean {
@@ -266,8 +281,8 @@ internal class ProTunSocketProtectCallback(
     }
 }
 
-internal class ProTunStatsCallback: ConnectionStatsCallback {
-    override fun onStatsResponse(stats: ConnectionStats) {
-        //TODO: implement
+internal class ProTunEventCallback(val weakService: WeakReference<ProTunVpnService>): EventCallback {
+    override fun onEvent(event: Event) {
+        weakService.get()?.onEvent(event)
     }
 }

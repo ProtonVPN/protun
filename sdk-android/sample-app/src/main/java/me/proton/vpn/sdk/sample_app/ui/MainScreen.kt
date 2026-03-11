@@ -87,7 +87,7 @@ fun MainScreen(
     LaunchedEffect(context) {
         viewModel.events.collect { event ->
             when (event) {
-                is Event.ConnectionError -> {
+                is Event.ShowMessage -> {
                     Toast.makeText(context, event.message, Toast.LENGTH_LONG).show()
                 }
             }

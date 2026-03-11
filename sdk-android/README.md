@@ -55,6 +55,13 @@ connectionManager.state.forEach { state ->
     }
 }.launchIn(scope)
 
+// Handle events
+connectionManager.events.forEach { event ->
+    when (event) {
+        ....
+    }
+}.launchIn(scope)
+
 // Before connection app needs to make sure VPN system permission is granted.
 val intent = VpnService.prepare(context)
 if (intent != null) {

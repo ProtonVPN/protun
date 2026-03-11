@@ -26,33 +26,85 @@ import android.content.ServiceConnection
 import android.os.IBinder
 import androidx.core.content.ContextCompat
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.channels.BufferOverflow
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.emptyFlow
+import kotlinx.coroutines.flow.filterNotNull
+import kotlinx.coroutines.flow.flatMapLatest
+import kotlinx.coroutines.flow.flow
+import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.shareIn
 import kotlinx.coroutines.launch
 import me.proton.vpn.sdk.api.InitialConfig
 import me.proton.vpn.sdk.api.InterfaceConfig
+import me.proton.vpn.sdk.api.Logger
 import me.proton.vpn.sdk.api.PacketCaptureInfo
 import me.proton.vpn.sdk.api.Peer
 import me.proton.vpn.sdk.api.ProtonVpnConnectionManager
+import me.proton.vpn.sdk.api.VpnConnectionEvent
 import me.proton.vpn.sdk.api.VpnConnectionState
-import me.proton.vpn.sdk.api.VpnConnectionStateListener
 import me.proton.vpn.sdk.api.VpnDisconnectError
+import me.proton.vpn.sdk.internal.toSdk
 import me.proton.vpn.sdk.service.ProTunVpnService
 import me.proton.vpn.sdk.service.ProTunVpnServiceBinder
 import me.proton.vpn.sdk.service.ProTunVpnServiceCallback
-import java.util.concurrent.CopyOnWriteArrayList
+import uniffi.protun.Event
+import uniffi.protun.LogLevel
 
 internal class ProtonVpnConnectionManagerImpl(
     private val mainScope: CoroutineScope,
-    private val context: Context
+    private val context: Context,
+    private val logger: Logger,
 ): ProtonVpnConnectionManager {
 
     private val serviceConnection: ServiceConnection
-    private val stateListeners = CopyOnWriteArrayList<VpnConnectionStateListener>()
 
     private var bound = false
+
+    private val _eventsInternal = MutableSharedFlow<Event>(
+        extraBufferCapacity = 100,
+        onBufferOverflow = BufferOverflow.DROP_OLDEST
+    )
+
+    override val events: Flow<VpnConnectionEvent> = _eventsInternal
+        .map { event -> event.toSdk() }
+        .filterNotNull()
+
     private val _state = MutableStateFlow<VpnConnectionState>(VpnConnectionState.Disconnected())
     override val state: StateFlow<VpnConnectionState> = _state
+
+    // Cold flow that request connection stats every second when connected.
+    private fun createStatsRequestFlow() = state
+        .map { it is VpnConnectionState.Connected }
+        .distinctUntilChanged()
+        .flatMapLatest { isConnected ->
+            if (isConnected) {
+                flow {
+                    emit(Unit)
+                    while (true) {
+                        requestConnectionStats()
+                        delay(1000)
+                    }
+                }
+            } else {
+                emptyFlow()
+            }
+        }
+
+    override val connectionStats = combine(
+        createStatsRequestFlow(),
+        _eventsInternal
+    ) { _, event -> (event as? Event.ConnectionStats)?.toSdk() }
+        .filterNotNull()
+        .distinctUntilChanged()
+        .shareIn(mainScope, started = SharingStarted.WhileSubscribed(stopTimeoutMillis = 1_000))
 
     init {
         serviceConnection = object : ServiceConnection {
@@ -63,6 +115,10 @@ internal class ProtonVpnConnectionManagerImpl(
                     // Don't accept state changes after disconnecting
                     if (bound)
                         setState(state)
+                }
+
+                override fun onEvent(event: Event) {
+                    emitEvent(event)
                 }
             }
 
@@ -129,6 +185,12 @@ internal class ProtonVpnConnectionManagerImpl(
         }
     }
 
+    private fun requestConnectionStats() {
+        mainScope.launch {
+            sendAction(ProTunVpnService.VpnAction.Update.RequestConnectionStats)
+        }
+    }
+
     override fun disconnect() {
         mainScope.launch {
             sendAction(ProTunVpnService.VpnAction.Disconnect)
@@ -138,21 +200,23 @@ internal class ProtonVpnConnectionManagerImpl(
         }
     }
 
-    override fun registerStateListener(listener: VpnConnectionStateListener) {
-        stateListeners.add(listener)
-    }
-
-    override fun unregisterStateListener(listener: VpnConnectionStateListener) {
-        stateListeners.remove(listener)
-    }
-
     private fun sendAction(vpnAction: ProTunVpnService.VpnAction) {
         ContextCompat.startForegroundService(context,ProTunVpnService.actionIntent(context, vpnAction))
     }
 
     private fun setState(state: VpnConnectionState) {
         _state.value = state
-        for (listener in stateListeners)
-            listener.onStateChanged(state)
     }
+
+    private fun emitEvent(event: Event) {
+        val emitSuccessful = _eventsInternal.tryEmit(event)
+        if (!emitSuccessful)
+            logger.log(LogLevel.WARN, "Dropping VPN event $event because the buffer is full")
+    }
+}
+
+private fun Event.toSdk(): VpnConnectionEvent? = when (this) {
+    is Event.ConnectionStats -> null // ConnectionStats are exposed in a dedicated flow, not as events
+    is Event.PacketCaptureStarted -> VpnConnectionEvent.PacketCaptureStarted(info.toSdk())
+    is Event.PacketCaptureStopped -> VpnConnectionEvent.PacketCaptureStopped(reason.toSdk())
 }

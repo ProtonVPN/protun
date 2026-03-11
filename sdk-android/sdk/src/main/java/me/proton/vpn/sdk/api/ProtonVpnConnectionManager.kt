@@ -20,9 +20,11 @@
 package me.proton.vpn.sdk.api
 
 import android.os.Parcelable
+import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.parcelize.Parcelize
 import java.io.File
+import java.time.Duration
 
 /**
  * ProtonVPN connection manager. Provides methods to establish, manage and track VPN connection to
@@ -34,8 +36,13 @@ import java.io.File
  * '''kotlin
  *   // Observe VPN state changes in kotlin
  *   vpnManager.state.onEach { state -> handleState(state) }.launchIn(coroutineScope)
+ *
+ *   // Observe VPN events (e.g. connection stats, packet capture start/stop) in kotlin
+ *   vpnManager.events.onEach { event -> handleEvent(event) }.launchIn(coroutineScope)
+ *
  *   // or with Java-friendly listener
  *   manager.registerStateListener (state -> { ... });
+ *   manager.registerEventListener (event -> { ... });
  *
  *   // start initial connection
  *   vpnManager.connect(InitialConfig(...))
@@ -50,7 +57,11 @@ import java.io.File
  * '''
  */
 interface ProtonVpnConnectionManager {
+
     val state: StateFlow<VpnConnectionState>
+    val events: Flow<VpnConnectionEvent>
+    val connectionStats: Flow<ConnectionStats>
+
     fun connect(config: InitialConfig)
     fun updateInterfaceConfig(interfaceConfig: InterfaceConfig)
     fun updatePeers(peers: List<Peer>)
@@ -64,16 +75,6 @@ interface ProtonVpnConnectionManager {
     fun setPacketCaptureEnabled(packetCaptureInfo: PacketCaptureInfo?)
 
     fun disconnect()
-
-    /**
-     * Java-friendly state listener
-     */
-    fun registerStateListener(listener: VpnConnectionStateListener)
-    fun unregisterStateListener(listener: VpnConnectionStateListener)
-}
-
-fun interface VpnConnectionStateListener {
-    fun onStateChanged(state: VpnConnectionState)
 }
 
 @Parcelize
@@ -108,9 +109,20 @@ data class InitialConfig(
  * Information about packet capture (pcap) file for debugging.
  */
 @Parcelize
-data class PacketCaptureInfo(val type: PacketCaptureFile, val maxBytes: ULong) : Parcelable
+data class PacketCaptureInfo(val file: PacketCaptureFile, val maxBytes: ULong?) : Parcelable
 sealed interface PacketCaptureFile : Parcelable {
 
     @Parcelize data class Fd(val fd: Int) : PacketCaptureFile
     @Parcelize data class Path(val path: File, val append: Boolean) : PacketCaptureFile
 }
+
+/**
+ * Current connection stats. Will be emitted in [ProtonVpnConnectionManager.connectionStats].
+ */
+data class ConnectionStats(
+    val receivedBytes: ULong,
+    val sentBytes: ULong,
+    val timeSinceLastHandshake: Duration,
+    val estimatedLoss: Float,
+    val estimatedRoundTripTime: Duration
+)

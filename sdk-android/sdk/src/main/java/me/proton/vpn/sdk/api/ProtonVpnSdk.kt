@@ -55,6 +55,7 @@ class ProtonVpnSdk private constructor(
          *  SDK-dependencies should be lightweight (e.g. via lazy) to avoid slowing-down app startup.
          *
          * @param context Application context
+         * @param logger Logger implementation
          * @param includeNativeLogs Whether to include logs from the rust layer. Set it to false if
          *    you already handle rust `log::set_logger` in the app.
          * @param nativeLogLevel Minimum log level for native logs
@@ -66,6 +67,7 @@ class ProtonVpnSdk private constructor(
          */
         fun create(
             context: Context,
+            logger: Logger,
             includeNativeLogs: Boolean = true,
             nativeLogLevel: LogLevel = LogLevel.INFO,
             initDependencies: (ProtonVpnSdk) -> SdkDependencies,
@@ -74,7 +76,7 @@ class ProtonVpnSdk private constructor(
             val mainScope = MainScope()
 
             val sdk = ProtonVpnSdk(
-                ProtonVpnConnectionManagerImpl(mainScope, appContext)
+                ProtonVpnConnectionManagerImpl(mainScope, appContext, logger)
             )
 
             val dependencies = initDependencies(sdk)
@@ -82,7 +84,7 @@ class ProtonVpnSdk private constructor(
             // Initialize the dependency container for system-instantiated components
             DependencyContainer.initialize(
                 context = appContext,
-                logger = dependencies.logger,
+                logger = logger,
                 notificationFactory = dependencies.notificationFactory,
                 systemEventHandler = dependencies.systemEventHandler,
                 nativeLogLevel = nativeLogLevel.takeIf { includeNativeLogs },
@@ -97,11 +99,9 @@ class ProtonVpnSdk private constructor(
  * Dependencies required by the SDK to operate within the host application.
  *
  * @param notificationFactory Factory for creating VPN notifications
- * @param logger Logger implementation for SDK logging
  * @param systemEventHandler Handler for system events (e.g. connectivity changes)
  */
 class SdkDependencies(
     val notificationFactory: ForegroundServiceNotificationFactory,
-    val logger: Logger,
     val systemEventHandler: SystemEventHandler
 )

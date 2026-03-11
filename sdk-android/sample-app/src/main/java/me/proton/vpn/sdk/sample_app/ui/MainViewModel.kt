@@ -25,11 +25,14 @@ import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.channels.BufferOverflow
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.SharingStarted
+import kotlinx.coroutines.flow.launchIn
 import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.onEach
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import me.proton.vpn.sdk.api.PeerConnection
 import me.proton.vpn.sdk.api.ProtonVpnConnectionManager
+import me.proton.vpn.sdk.api.VpnConnectionEvent
 import me.proton.vpn.sdk.api.VpnConnectionState
 import me.proton.vpn.sdk.sample_app.data.ConfigStore
 import me.proton.vpn.sdk.sample_app.data.VpnConfig
@@ -74,6 +77,23 @@ class MainViewModel @Inject constructor(
         initialValue = UiState.loading()
     )
 
+    init {
+        connectionManager.events.onEach { event ->
+            val uiEvent = when (event) {
+                is VpnConnectionEvent.PacketCaptureStarted ->
+                    Event.ShowMessage("Packet capture started: ${event.info.file}")
+                is VpnConnectionEvent.PacketCaptureStopped ->
+                    Event.ShowMessage("Packet capture stopped: ${event.reason.javaClass.simpleName}")
+            }
+            events.emit(uiEvent)
+        }.launchIn(viewModelScope)
+
+        // Connection stats updates will come every 1s when state is Connected
+        connectionManager.connectionStats.onEach {
+            println("Connection stats: $it")
+        }.launchIn(viewModelScope)
+    }
+
     fun connect(vpnConfig: VpnConfig) {
         viewModelScope.launch {
             configStore.updateData { vpnConfig }
@@ -81,7 +101,9 @@ class MainViewModel @Inject constructor(
         try {
             connectionManager.connect(vpnConfig.toInitialConfig())
         } catch (e: IllegalArgumentException) {
-            events.tryEmit(Event.ConnectionError("Invalid configuration: ${e.message}") )
+            viewModelScope.launch {
+                events.emit(Event.ShowMessage("Invalid configuration: ${e.message}"))
+            }
         }
     }
 
@@ -94,7 +116,7 @@ class MainViewModel @Inject constructor(
             VpnPermissionError.PermissionDenied -> "VPN permission denied"
             VpnPermissionError.VpnNotSupported-> "VPN not supported on this device"
         }
-        events.tryEmit(Event.ConnectionError(message))
+        viewModelScope.launch { events.emit(Event.ShowMessage(message)) }
     }
 }
 
@@ -117,7 +139,7 @@ data class UiState(
 }
 
 sealed interface Event {
-    data class ConnectionError(val message: String) : Event
+    data class ShowMessage(val message: String) : Event
 }
 
 private fun PeerConnection.toDisplay() =

@@ -30,36 +30,26 @@ import me.proton.vpn.sdk.api.InitialConfig
 import me.proton.vpn.sdk.api.InterfaceConfig
 import me.proton.vpn.sdk.api.Logger
 import me.proton.vpn.sdk.api.PacketCaptureInfo
-import me.proton.vpn.sdk.api.PacketCaptureFile
 import me.proton.vpn.sdk.api.Peer
-import me.proton.vpn.sdk.api.PeerConnection
 import me.proton.vpn.sdk.api.VpnConnectionState
-import me.proton.vpn.sdk.api.VpnDisconnectError
-import me.proton.vpn.sdk.api.VpnProtocol
 import me.proton.vpn.sdk.api.VpnWaitReason
 import me.proton.vpn.sdk.internal.WallClockMs
+import me.proton.vpn.sdk.internal.decodeBase64
+import me.proton.vpn.sdk.internal.toSdk
+import me.proton.vpn.sdk.internal.toUniFFI
 import me.proton.vpn.sdk.service.usecases.EstablishTun
 import me.proton.vpn.sdk.service.usecases.NetworkObserver
 import uniffi.protun.Connection
 import uniffi.protun.ConnectivityEvent
-import uniffi.protun.DisconnectReason
-import uniffi.protun.FileWriteMode
+import uniffi.protun.EventCallback
 import uniffi.protun.InitialConnectionConfig
 import uniffi.protun.LogLevel
-import uniffi.protun.PcapFile
-import uniffi.protun.PcapFileInfo
-import uniffi.protun.PeerConnectionInfo
-import uniffi.protun.PeerInfo
 import uniffi.protun.PrivateKeyUpdateInfo
-import uniffi.protun.Protocol
 import uniffi.protun.State
 import uniffi.protun.StateChangedCallback
 import uniffi.protun.WaitReason
 import java.lang.ref.WeakReference
-import java.net.InetSocketAddress
 import java.util.Date
-import kotlin.io.encoding.Base64
-import kotlin.io.encoding.ExperimentalEncodingApi
 
 internal class ConnectionManager(
     private val networkObserver: NetworkObserver,
@@ -76,7 +66,9 @@ internal class ConnectionManager(
     ) {
         fun clear() {
             stateChangeCallback.clear()
-            connection.disconnect()
+            // This will block main thread but should finish quickly. Allows all events to be
+            // delivered to the app before service is closed.
+            connection.disconnectAndWait()
             connection.destroy()
         }
     }
@@ -111,7 +103,7 @@ internal class ConnectionManager(
         config: InitialConfig,
         builder: VpnService.Builder,
         socketProtectCallback: ProTunSocketProtectCallback,
-        statsCallback: ProTunStatsCallback
+        eventCallback: EventCallback
     ) {
         if (activeConnection != null)
             clearConnection(VpnConnectionState.Connecting(emptyList()))
@@ -133,7 +125,7 @@ internal class ConnectionManager(
                     tunFd = tunFd.detachFd(),
                     stateChangeCallback = stateChangeCallback,
                     socketFdAvailableCallback = socketProtectCallback,
-                    statsCallback = statsCallback
+                    eventCallback = eventCallback
                 )
                 activeConnection = ActiveConnection(
                     connection = nativeConnection,
@@ -187,6 +179,10 @@ internal class ConnectionManager(
             activeConnection?.connection?.startPacketCapture(packetCaptureInfo.toUniFFI())
     }
 
+    fun requestConnectionStats() {
+        activeConnection?.connection?.getStats()
+    }
+
     fun onProTunStateChange(proTunState: State) {
         serviceScope.launch {
             val activeConnection = activeConnection
@@ -194,11 +190,11 @@ internal class ConnectionManager(
                 state.value = VpnConnectionState.Disconnected()
             else {
                 val newState = when (proTunState) {
-                    is State.Disconnected -> VpnConnectionState.Disconnected(proTunState.error?.toVpnDisconnectReason())
-                    is State.Connecting -> VpnConnectionState.Connecting(proTunState.peers.map { it.toPeerConnection() })
+                    is State.Disconnected -> VpnConnectionState.Disconnected(proTunState.error?.toSdk())
+                    is State.Connecting -> VpnConnectionState.Connecting(proTunState.peers.map { it.toSdk() })
                     is State.WaitingForAction -> handleAction(proTunState.reason)
                     is State.Connected -> VpnConnectionState.Connected(
-                        proTunState.peer.toPeerConnection(),
+                        proTunState.peer.toSdk(),
                         connectedSince = activeConnection.startedAt
                     )
                 }
@@ -223,37 +219,6 @@ internal class ConnectionManager(
         }
 }
 
-private fun PeerConnectionInfo.toPeerConnection(): PeerConnection =
-    PeerConnection(
-        protocol = protocol.toVpnProtocol(),
-        id = peerId,
-        entryAddr = InetSocketAddress(entryIp, port.toInt())
-    )
-
-private fun List<Peer>.toUniFFI(): List<PeerInfo> = map { peer ->
-    PeerInfo(
-        peerId = peer.id,
-        serverIp = requireNotNull(peer.address.hostAddress),
-        serverPublicKey = peer.publicKeyX25519Base64.decodeBase64(),
-        tcpPorts = peer.ports[VpnProtocol.WireGuardTcp]?.map { it.toUShort() } ?: emptyList(),
-        udpPorts = peer.ports[VpnProtocol.WireGuardUdp]?.map { it.toUShort() } ?: emptyList(),
-        tlsPorts = peer.ports[VpnProtocol.Stealth]?.map { it.toUShort() } ?: emptyList(),
-        priority = peer.priority,
-    )
-}
-
-private fun PacketCaptureInfo.toUniFFI(): PcapFileInfo = PcapFileInfo(
-    when (type) {
-        is PacketCaptureFile.Fd -> PcapFile.Fd(type.fd)
-        is PacketCaptureFile.Path -> PcapFile.Path(type.path.absolutePath, FileWriteMode.OVERWRITE)
-    },
-    maxBytes
-)
-
-private fun DisconnectReason.toVpnDisconnectReason(): VpnDisconnectError = when (this) {
-    is DisconnectReason.TunEstablishError -> VpnDisconnectError.TunInterfaceError(message)
-}
-
 internal class ProTunStateChangedCallback(val weakManager: WeakReference<ConnectionManager>): StateChangedCallback {
     override fun onStateChanged(state: State) {
         weakManager.get()?.onProTunStateChange(state)
@@ -263,12 +228,3 @@ internal class ProTunStateChangedCallback(val weakManager: WeakReference<Connect
         weakManager.clear()
     }
 }
-
-private fun Protocol.toVpnProtocol(): VpnProtocol = when (this) {
-    Protocol.WIREGUARD_UDP -> VpnProtocol.WireGuardUdp
-    Protocol.WIREGUARD_TCP -> VpnProtocol.WireGuardTcp
-    Protocol.STEALTH -> VpnProtocol.Stealth
-}
-
-@OptIn(ExperimentalEncodingApi::class)
-private fun String.decodeBase64(): ByteArray = Base64.decode(this)

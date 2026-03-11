@@ -54,11 +54,10 @@ object AppModule {
         mainScope: CoroutineScope,
         configStore: ConfigStore,
         logger: VpnLogger,
-    ): ProtonVpnSdk = ProtonVpnSdk.create(appContext) { sdk ->
+    ): ProtonVpnSdk = ProtonVpnSdk.create(appContext, logger) { sdk ->
         SdkDependencies(
             notificationFactory =
                 VpnNotificationFactory(appContext, mainScope, sdk.connectionManager),
-            logger = logger,
             systemEventHandler =
                 AppSystemEventHandler(mainScope, sdk.connectionManager, configStore, logger),
         )
