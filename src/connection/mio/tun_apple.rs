@@ -22,7 +22,7 @@ use mio::event;
 
 use crate::connection::mio::streams::MioStream;
 use crate::connection::mio::tun_source::TunSourceFd;
-use crate::connection::streams::{Stream, StreamResult};
+use crate::connection::streams::{PendingWrite, Stream, StreamResult, WouldBlock};
 
 const APPLE_TUN_PACKET_HEADER_LEN: usize = 4;
 const APPLE_WRITE_BUFFER_SIZE: usize = 2048;
@@ -71,8 +71,8 @@ impl Stream for TunStreamApple {
                 StreamResult::Ok {
                     bytes_count: bytes_read - APPLE_TUN_PACKET_HEADER_LEN,
                     start_offset: APPLE_TUN_PACKET_HEADER_LEN,
-                    would_block: false,
-                    pending_write: false
+                    would_block: WouldBlock::No,
+                    pending_write: PendingWrite::No
                 }
             }
             Ok(bytes_read) => {
@@ -82,7 +82,7 @@ impl Stream for TunStreamApple {
                 ))
             },
             Err(e) => if e.kind() == io::ErrorKind::WouldBlock {
-                StreamResult::ok(0, true, false)
+                StreamResult::ok(0, WouldBlock::Yes, PendingWrite::No)
             } else {
                 StreamResult::Err(e)
             }
@@ -117,7 +117,7 @@ impl Stream for TunStreamApple {
                 }
                 Err(e) if e.kind() == io::ErrorKind::WouldBlock => {
                     if bytes_written >= APPLE_TUN_PACKET_HEADER_LEN {
-                        return StreamResult::ok(bytes_written - APPLE_TUN_PACKET_HEADER_LEN, true, false)
+                        return StreamResult::ok(bytes_written - APPLE_TUN_PACKET_HEADER_LEN, WouldBlock::Yes, PendingWrite::No)
                     } else {
                         return StreamResult::Err(io::Error::new(
                             io::ErrorKind::Other,
@@ -129,10 +129,10 @@ impl Stream for TunStreamApple {
             }
         }
 
-        StreamResult::ok(data.len(), false, false)
+        StreamResult::ok(data.len(), WouldBlock::No, PendingWrite::No)
     }
 
     fn write_from_buffer(&mut self) -> StreamResult {
-        StreamResult::ok(0, false, false)
+        StreamResult::ok(0, WouldBlock::No, PendingWrite::No)
     }
 }

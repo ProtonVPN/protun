@@ -17,7 +17,7 @@
 
 use std::io;
 use mio::{event, net::UdpSocket};
-use crate::connection::{mio::streams::MioStream, streams::{Stream, StreamResult}};
+use crate::connection::{mio::streams::MioStream, streams::{PendingWrite, Stream, StreamResult, WouldBlock}};
 
 pub(crate) struct UdpSocketStream {
     sock: UdpSocket,
@@ -40,10 +40,10 @@ impl Stream for UdpSocketStream {
         let ret = self.sock.recv(buf);
         match ret {
             Ok(bytes_count) => {
-                StreamResult::ok(bytes_count, false, false)
+                StreamResult::ok(bytes_count, WouldBlock::No, PendingWrite::No)
             }
             Err(e) => if e.kind() == io::ErrorKind::WouldBlock {
-                StreamResult::ok(0, true, false)
+                StreamResult::ok(0, WouldBlock::Yes, PendingWrite::No)
             } else {
                 StreamResult::Err(e)
             }
@@ -57,10 +57,10 @@ impl Stream for UdpSocketStream {
                 if size < data.len() {
                     log::debug!("UDP send truncated: {} < {}", size, data.len());
                 }
-                StreamResult::ok(size, false, false)
+                StreamResult::ok(size, WouldBlock::No, PendingWrite::No)
             }
             Err(e) => if e.kind() == io::ErrorKind::WouldBlock {
-                StreamResult::ok(0, true, false)
+                StreamResult::ok(0, WouldBlock::Yes, PendingWrite::No)
             } else {
                 StreamResult::Err(e)
             }
@@ -69,6 +69,6 @@ impl Stream for UdpSocketStream {
 
     fn write_from_buffer(&mut self) -> StreamResult {
         // no write buffer for UDP
-        StreamResult::ok(0, false, false)
+        StreamResult::ok(0, WouldBlock::No, PendingWrite::No)
     }
 }

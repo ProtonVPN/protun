@@ -21,7 +21,7 @@ use windows::Win32::Foundation::HANDLE;
 use wintun::Packet;
 
 use crate::api::windows::protun_error::ProTunFatalError;
-use crate::connection::streams::{Stream, StreamResult};
+use crate::connection::streams::{PendingWrite, Stream, StreamResult, WouldBlock};
 use crate::connection::windows::streams::{WindowsStream, WindowsStreamState};
 use crate::connection::windows::helpers::wintun::wintun_session::WinTunSession;
 
@@ -74,10 +74,10 @@ impl Stream for TunStreamWindows {
                         log::error!("TUN packet size ({packet_size}) is larger than buffer size ({buf_size})");
                     }
 
-                    StreamResult::ok(n_bytes, false, false)
+                    StreamResult::ok(n_bytes, WouldBlock::No, PendingWrite::No)
                 }
                 None => {
-                    StreamResult::ok(0, true, false)
+                    StreamResult::ok(0, WouldBlock::Yes, PendingWrite::No)
                 }
             },
             Err(error) => {
@@ -112,11 +112,11 @@ impl Stream for TunStreamWindows {
             unwritten_data = &unwritten_data[n_packet_bytes..];
         }
 
-        StreamResult::ok(data.len(), false, false)
+        StreamResult::ok(data.len(), WouldBlock::No, PendingWrite::No)
     }
 
     fn write_from_buffer(&mut self) -> StreamResult {
-        StreamResult::ok(0, false, false)
+        StreamResult::ok(0, WouldBlock::No, PendingWrite::No)
     }
 }
 

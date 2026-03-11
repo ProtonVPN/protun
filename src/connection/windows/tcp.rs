@@ -23,7 +23,7 @@ use std::net::{Shutdown, SocketAddr, SocketAddrV4, SocketAddrV6, TcpStream};
 use std::os::windows::io::AsRawSocket;
 use windows::Win32::Foundation::HANDLE;
 use windows::Win32::Networking::WinSock::SOCKET;
-use crate::connection::streams::{Stream, StreamResult};
+use crate::connection::streams::{PendingWrite, Stream, StreamResult, WouldBlock};
 use crate::connection::windows::helpers::local_ip_finder::{get_ipv4_internet_interface, get_ipv6_internet_interface};
 use crate::connection::windows::streams::{WindowsStream, WindowsStreamState};
 use crate::connection::windows::helpers::socket_handle::{SocketEvent, SocketHandle};
@@ -138,7 +138,7 @@ impl WindowsStream for TcpSocketStream {
 impl Stream for TcpSocketStream {
     fn read(&mut self, buf: &mut [u8]) -> StreamResult {
         let ret = self.socket.read(buf);
-        let pending_write = !self.write_buffer.is_empty();
+        let pending_write = if self.write_buffer.is_empty() { PendingWrite::No } else { PendingWrite::Yes };
         match ret {
             Ok(bytes_count) => {
                 if bytes_count == 0 {
@@ -146,13 +146,13 @@ impl Stream for TcpSocketStream {
                     StreamResult::StreamClosed
                 } else {
                     self.is_readable = true;
-                    StreamResult::ok(bytes_count, false, pending_write)
+                    StreamResult::ok(bytes_count, WouldBlock::No, pending_write)
                 }
             },
             Err(e) => {
                 self.is_readable = false;
                 if e.kind() == io::ErrorKind::WouldBlock {
-                    StreamResult::ok(0, true, pending_write)
+                    StreamResult::ok(0, WouldBlock::Yes, pending_write)
                 } else {
                     StreamResult::Err(e)
                 }
@@ -171,7 +171,7 @@ impl Stream for TcpSocketStream {
             let data = self.write_buffer.pop_front();
             let Some(data) = data else {
                 self.is_writable = true;
-                return StreamResult::ok(bytes_written, false, false);
+                return StreamResult::ok(bytes_written, WouldBlock::No, PendingWrite::No);
             };
             let result = self.socket.write(&data);
             match result {
@@ -185,7 +185,7 @@ impl Stream for TcpSocketStream {
                     self.write_buffer.push_front(data);
                     self.is_writable = false;
                     return if e.kind() == io::ErrorKind::WouldBlock {
-                        StreamResult::ok(bytes_written, true, true)
+                        StreamResult::ok(bytes_written, WouldBlock::Yes, PendingWrite::Yes)
                     } else {
                         StreamResult::Err(e)
                     }

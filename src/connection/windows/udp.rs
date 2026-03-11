@@ -15,7 +15,7 @@
 // You should have received a copy of the GNU General Public License
 // along with ProtonVPN.  If not, see <https://www.gnu.org/licenses/>.
 
-use crate::connection::streams::{Stream, StreamResult};
+use crate::connection::streams::{PendingWrite, Stream, StreamResult, WouldBlock};
 use crate::connection::windows::helpers::local_ip_finder::{get_ipv4_internet_interface, get_ipv6_internet_interface};
 use crate::connection::windows::streams::{WindowsStream, WindowsStreamState};
 use crate::connection::windows::helpers::socket_handle::{SocketEvent, SocketHandle};
@@ -126,13 +126,13 @@ impl Stream for UdpSocketStream {
             Ok(bytes_count) => {
                 log::trace!("Read {bytes_count} bytes from UDP socket");
                 self.is_readable = true;
-                StreamResult::ok(bytes_count, false, false)
+                StreamResult::ok(bytes_count, WouldBlock::No, PendingWrite::No)
             },
             Err(e) => {
                 log::trace!("Error when read from UDP socket {:?}", e);
                 self.is_readable = false;
                 if e.kind() == io::ErrorKind::WouldBlock {
-                    StreamResult::ok(0, true, false)
+                    StreamResult::ok(0, WouldBlock::Yes, PendingWrite::No)
                 } else {
                     StreamResult::Err(e)
                 }
@@ -151,13 +151,13 @@ impl Stream for UdpSocketStream {
                 } else {
                     log::trace!("Successfuly wrote to UDP socket ({size} bytes)");
                 }
-                StreamResult::ok(size, false, false)
+                StreamResult::ok(size, WouldBlock::No, PendingWrite::No)
             }
             Err(e) => {
                 log::trace!("Error when writing to UDP socket {:?}", e);
                 self.is_writable = false;
                 if e.kind() == io::ErrorKind::WouldBlock {
-                    StreamResult::ok(0, true, false)
+                    StreamResult::ok(0, WouldBlock::Yes, PendingWrite::No)
                 } else {
                     StreamResult::Err(e)
                 }
@@ -166,7 +166,7 @@ impl Stream for UdpSocketStream {
     }
 
     fn write_from_buffer(&mut self) -> StreamResult {
-        StreamResult::ok(0, false, false)
+        StreamResult::ok(0, WouldBlock::No, PendingWrite::No)
     }
 }
 

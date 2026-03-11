@@ -22,7 +22,7 @@ use mio::event;
 
 use crate::connection::mio::streams::MioStream;
 use crate::connection::mio::tun_source::TunSourceFd;
-use crate::connection::streams::{Stream, StreamResult};
+use crate::connection::streams::{PendingWrite, Stream, StreamResult, WouldBlock};
 
 /// Unix-specific implementation of [MioStream] for the tun device.
 pub(crate) struct TunStreamUnix {
@@ -52,11 +52,11 @@ impl Stream for TunStreamUnix {
                 if bytes_count == 0 {
                     StreamResult::Err(io::Error::new(io::ErrorKind::UnexpectedEof, "tun read: unexpected EOF"))
                 } else {
-                    StreamResult::ok(bytes_count, false, false)
+                    StreamResult::ok(bytes_count, WouldBlock::No, PendingWrite::No)
                 }
             }
             Err(e) => if e.kind() == io::ErrorKind::WouldBlock {
-                StreamResult::ok(0, true, false)
+                StreamResult::ok(0, WouldBlock::Yes, PendingWrite::No)
             } else {
                 StreamResult::Err(e)
             }
@@ -75,16 +75,16 @@ impl Stream for TunStreamUnix {
                     bytes_written += bytes_count;
                 }
                 Err(e) => return if e.kind() == io::ErrorKind::WouldBlock {
-                    StreamResult::ok(bytes_written, true, false)
+                    StreamResult::ok(bytes_written, WouldBlock::Yes, PendingWrite::No)
                 } else {
                     StreamResult::Err(e)
                 }
             }
         }
-        StreamResult::ok(bytes_written, false, false)
+        StreamResult::ok(bytes_written, WouldBlock::No, PendingWrite::No)
     }
 
     fn write_from_buffer(&mut self) -> StreamResult {
-        StreamResult::ok(0, false, false)
+        StreamResult::ok(0, WouldBlock::No, PendingWrite::No)
     }
 }

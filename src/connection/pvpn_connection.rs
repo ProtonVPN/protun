@@ -32,7 +32,7 @@ use crate::{
         connection::{InitialConnectionConfig, PeerInfo, WgClientPrivateKey},
         state::{PeerConnectionInfo, Protocol, WaitReason},
     },
-    connection::{pvpn_client::PvpnClient, streams::{PollResult, PollWaker, StreamResult, Streams}},
+    connection::{pvpn_client::PvpnClient, streams::{PendingWrite, PollResult, PollWaker, StreamResult, Streams, WouldBlock}},
 };
 use crate::api::connection::{ConnectivityEvent, EventCallback, PcapFileInfo, StateChangedCallback};
 use crate::api::events::{CaptureStopReason, Event};
@@ -382,7 +382,7 @@ impl PvpnConnection {
                                     self.client.push(Action::read(*stream_id, self.stream_read_buffer[range].to_vec()));
                                     self.pull_from_client();
                                 }
-                                if !would_block && bytes_read > 0 {
+                                if would_block == WouldBlock::No && bytes_read > 0 {
                                     next_stream_ids.push(*stream_id);
                                 }
                             }
@@ -435,9 +435,9 @@ impl PvpnConnection {
             self.current_tun_error = to_tun_error(res);
         }
         match res {
-            StreamResult::Ok { bytes_count: _, start_offset: _, would_block: _, pending_write } => {
-                self.streams.set_poll_enable_wait_for_write(stream_id, *pending_write);
-                if !*pending_write && stream_id > StreamId::TUN_STREAM_ID {
+            StreamResult::Ok { pending_write, .. } => {
+                self.streams.set_poll_enable_wait_for_write(stream_id, *pending_write == PendingWrite::Yes);
+                if *pending_write == PendingWrite::No && stream_id > StreamId::TUN_STREAM_ID {
                     self.client.push(Action::done(stream_id));
                 }
             },
@@ -499,7 +499,7 @@ impl PvpnConnection {
 
 fn to_tun_error(res: &StreamResult) -> Option<String> {
     match res {
-        StreamResult::Ok { bytes_count: _, start_offset: _, would_block: _, pending_write: _ } => None,
+        StreamResult::Ok { .. } => None,
         StreamResult::Err(e) => Some(e.to_string()),
         StreamResult::StreamClosed => Some("Stream closed".to_string()),
     }

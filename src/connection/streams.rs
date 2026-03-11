@@ -60,6 +60,12 @@ pub(crate) trait PollWaker {
     fn wake(&self);
 }
 
+#[derive(Debug, PartialEq)]
+pub(crate) enum WouldBlock { Yes, No }
+
+#[derive(Debug, PartialEq)]
+pub(crate) enum PendingWrite { Yes, No }
+
 /// Result of a stream read/write operation.
 #[derive(Debug)]
 pub(crate) enum StreamResult {
@@ -69,9 +75,9 @@ pub(crate) enum StreamResult {
         /// Offset at which caller should start read data.
         start_offset: usize,
         /// Whether the operation ended with WouldBlock.
-        would_block: bool,
+        would_block: WouldBlock,
         /// Stream need to become writable to send more data.
-        pending_write: bool,
+        pending_write: PendingWrite,
     },
     Err(io::Error),
     StreamClosed,
@@ -79,7 +85,7 @@ pub(crate) enum StreamResult {
 
 impl StreamResult {
     /// Convenience helper for platforms defaulting to a `start_offset` of 0.
-    pub fn ok(bytes_count: usize, would_block: bool, pending_write: bool) -> Self {
+    pub fn ok(bytes_count: usize, would_block: WouldBlock, pending_write: PendingWrite) -> Self {
         StreamResult::Ok { bytes_count, start_offset: 0, would_block, pending_write }
     }
 }

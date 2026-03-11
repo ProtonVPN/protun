@@ -23,7 +23,7 @@ use mio::net::TcpStream;
 use pvpnclient::action::SocketOption;
 
 use crate::connection::mio::streams::MioStream;
-use crate::connection::streams::{Stream, StreamResult};
+use crate::connection::streams::{PendingWrite, Stream, StreamResult, WouldBlock};
 
 pub(crate) struct TcpSocketStream {
     sock: TcpStream,
@@ -44,17 +44,17 @@ impl Stream for TcpSocketStream {
 
     fn read(&mut self, buf: &mut [u8]) -> StreamResult {
         let ret = self.sock.read(buf);
-        let pending_write = !self.write_buffer.is_empty();
+        let pending_write = if self.write_buffer.is_empty() { PendingWrite::No } else { PendingWrite::Yes };
         match ret {
             Ok(bytes_count) => {
                 if bytes_count == 0 {
                     StreamResult::StreamClosed
                 } else {
-                    StreamResult::ok(bytes_count, false, pending_write)
+                    StreamResult::ok(bytes_count, WouldBlock::No, pending_write)
                 }
             },
             Err(e) => if e.kind() == io::ErrorKind::WouldBlock {
-                StreamResult::ok(0, true, pending_write)
+                StreamResult::ok(0, WouldBlock::Yes, pending_write)
             } else {
                 StreamResult::Err(e)
             }
@@ -71,7 +71,7 @@ impl Stream for TcpSocketStream {
         loop {
             let data = self.write_buffer.pop_front();
             let Some(data) = data else {
-                return StreamResult::ok(bytes_written, false, false);
+                return StreamResult::ok(bytes_written, WouldBlock::No, PendingWrite::No);
             };
             let result = self.sock.write(&data);
             match result {
@@ -84,7 +84,7 @@ impl Stream for TcpSocketStream {
                 Err(e) => {
                     self.write_buffer.push_front(data);
                     return if e.kind() == io::ErrorKind::WouldBlock {
-                        StreamResult::ok(bytes_written, true, true)
+                        StreamResult::ok(bytes_written, WouldBlock::Yes, PendingWrite::Yes)
                     } else {
                         StreamResult::Err(e)
                     }
