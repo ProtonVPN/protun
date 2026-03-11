@@ -40,10 +40,10 @@ impl Stream for UdpSocketStream {
         let ret = self.sock.recv(buf);
         match ret {
             Ok(bytes_count) => {
-                StreamResult::Ok { bytes_count, would_block: false, pending_write: false }
+                StreamResult::ok(bytes_count, false, false)
             }
             Err(e) => if e.kind() == io::ErrorKind::WouldBlock {
-                StreamResult::Ok { bytes_count: 0, would_block: true, pending_write: false }
+                StreamResult::ok(0, true, false)
             } else {
                 StreamResult::Err(e)
             }
@@ -57,10 +57,10 @@ impl Stream for UdpSocketStream {
                 if size < data.len() {
                     log::debug!("UDP send truncated: {} < {}", size, data.len());
                 }
-                StreamResult::Ok { bytes_count: size, would_block: false, pending_write: false }
+                StreamResult::ok(size, false, false)
             }
             Err(e) => if e.kind() == io::ErrorKind::WouldBlock {
-                StreamResult::Ok { bytes_count: 0, would_block: true, pending_write: false }
+                StreamResult::ok(0, true, false)
             } else {
                 StreamResult::Err(e)
             }
@@ -69,6 +69,6 @@ impl Stream for UdpSocketStream {
 
     fn write_from_buffer(&mut self) -> StreamResult {
         // no write buffer for UDP
-        StreamResult::Ok { bytes_count: 0, would_block: false, pending_write: false }
+        StreamResult::ok(0, false, false)
     }
 }

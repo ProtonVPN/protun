@@ -68,10 +68,12 @@ impl Stream for TunStreamApple {
         let rv = self.file.read(buf);
         match rv {
             Ok(bytes_read) if bytes_read >= APPLE_TUN_PACKET_HEADER_LEN => {
-                // TODO: Optimization opportunity: avoid the copy below by adding an offset or slice within StreamResult
-                let data_len = bytes_read - APPLE_TUN_PACKET_HEADER_LEN;
-                buf.copy_within(APPLE_TUN_PACKET_HEADER_LEN..bytes_read, 0);
-                StreamResult::Ok { bytes_count: data_len, would_block: false, pending_write: false }
+                StreamResult::Ok {
+                    bytes_count: bytes_read - APPLE_TUN_PACKET_HEADER_LEN,
+                    start_offset: APPLE_TUN_PACKET_HEADER_LEN,
+                    would_block: false,
+                    pending_write: false
+                }
             }
             Ok(bytes_read) => {
                 StreamResult::Err(io::Error::new(
@@ -80,7 +82,7 @@ impl Stream for TunStreamApple {
                 ))
             },
             Err(e) => if e.kind() == io::ErrorKind::WouldBlock {
-                StreamResult::Ok { bytes_count: 0, would_block: true, pending_write: false }
+                StreamResult::ok(0, true, false)
             } else {
                 StreamResult::Err(e)
             }
@@ -115,7 +117,7 @@ impl Stream for TunStreamApple {
                 }
                 Err(e) if e.kind() == io::ErrorKind::WouldBlock => {
                     if bytes_written >= APPLE_TUN_PACKET_HEADER_LEN {
-                        return StreamResult::Ok { bytes_count: bytes_written - APPLE_TUN_PACKET_HEADER_LEN, would_block: true, pending_write: false }
+                        return StreamResult::ok(bytes_written - APPLE_TUN_PACKET_HEADER_LEN, true, false)
                     } else {
                         return StreamResult::Err(io::Error::new(
                             io::ErrorKind::Other,
@@ -127,10 +129,10 @@ impl Stream for TunStreamApple {
             }
         }
 
-        StreamResult::Ok { bytes_count: data.len(), would_block: false, pending_write: false }
+        StreamResult::ok(data.len(), false, false)
     }
 
     fn write_from_buffer(&mut self) -> StreamResult {
-        StreamResult::Ok { bytes_count: 0, would_block: false, pending_write: false }
+        StreamResult::ok(0, false, false)
     }
 }

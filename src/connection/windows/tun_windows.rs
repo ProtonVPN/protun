@@ -74,18 +74,10 @@ impl Stream for TunStreamWindows {
                         log::error!("TUN packet size ({packet_size}) is larger than buffer size ({buf_size})");
                     }
 
-                    StreamResult::Ok {
-                        bytes_count: n_bytes,
-                        would_block: false,
-                        pending_write: false,
-                    }
+                    StreamResult::ok(n_bytes, false, false)
                 }
                 None => {
-                    StreamResult::Ok {
-                        bytes_count: 0,
-                        would_block: true,
-                        pending_write: false,
-                    }
+                    StreamResult::ok(0, true, false)
                 }
             },
             Err(error) => {
@@ -120,19 +112,11 @@ impl Stream for TunStreamWindows {
             unwritten_data = &unwritten_data[n_packet_bytes..];
         }
 
-        StreamResult::Ok {
-            bytes_count: data.len(),
-            would_block: false,
-            pending_write: false,
-        }
+        StreamResult::ok(data.len(), false, false)
     }
 
     fn write_from_buffer(&mut self) -> StreamResult {
-        StreamResult::Ok {
-            bytes_count: 0,
-            would_block: false,
-            pending_write: false,
-        }
+        StreamResult::ok(0, false, false)
     }
 }
 

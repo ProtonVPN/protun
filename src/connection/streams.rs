@@ -64,8 +64,10 @@ pub(crate) trait PollWaker {
 #[derive(Debug)]
 pub(crate) enum StreamResult {
     Ok {
-        /// Number of bytes read/written.
+        /// Number of payload bytes.
         bytes_count: usize,
+        /// Offset at which caller should start read data.
+        start_offset: usize,
         /// Whether the operation ended with WouldBlock.
         would_block: bool,
         /// Stream need to become writable to send more data.
@@ -73,6 +75,13 @@ pub(crate) enum StreamResult {
     },
     Err(io::Error),
     StreamClosed,
+}
+
+impl StreamResult {
+    /// Convenience helper for platforms defaulting to a `start_offset` of 0.
+    pub fn ok(bytes_count: usize, would_block: bool, pending_write: bool) -> Self {
+        StreamResult::Ok { bytes_count, start_offset: 0, would_block, pending_write }
+    }
 }
 
 #[derive(Debug)]

@@ -146,13 +146,13 @@ impl Stream for TcpSocketStream {
                     StreamResult::StreamClosed
                 } else {
                     self.is_readable = true;
-                    StreamResult::Ok { bytes_count, would_block: false, pending_write }
+                    StreamResult::ok(bytes_count, false, pending_write)
                 }
             },
             Err(e) => {
                 self.is_readable = false;
                 if e.kind() == io::ErrorKind::WouldBlock {
-                    StreamResult::Ok { bytes_count: 0, would_block: true, pending_write }
+                    StreamResult::ok(0, true, pending_write)
                 } else {
                     StreamResult::Err(e)
                 }
@@ -171,7 +171,7 @@ impl Stream for TcpSocketStream {
             let data = self.write_buffer.pop_front();
             let Some(data) = data else {
                 self.is_writable = true;
-                return StreamResult::Ok { bytes_count: bytes_written, would_block: false, pending_write: false };
+                return StreamResult::ok(bytes_written, false, false);
             };
             let result = self.socket.write(&data);
             match result {
@@ -185,7 +185,7 @@ impl Stream for TcpSocketStream {
                     self.write_buffer.push_front(data);
                     self.is_writable = false;
                     return if e.kind() == io::ErrorKind::WouldBlock {
-                        StreamResult::Ok { bytes_count: bytes_written, would_block: true, pending_write: true }
+                        StreamResult::ok(bytes_written, true, true)
                     } else {
                         StreamResult::Err(e)
                     }

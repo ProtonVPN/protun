@@ -375,10 +375,11 @@ impl PvpnConnection {
                             self.current_tun_error = to_tun_error(&read_result);
                         }
                         match read_result {
-                            StreamResult::Ok { bytes_count: bytes_read, would_block, pending_write: _ } => {
+                            StreamResult::Ok { bytes_count: bytes_read, start_offset, would_block, pending_write: _ } => {
                                 if bytes_read > 0 && self.network_recovery_handler.is_network_available() {
                                     // When there's no network, just drop the data from tun device.
-                                    self.client.push(Action::read(*stream_id, self.stream_read_buffer[..bytes_read].to_vec()));
+                                    let range = start_offset..start_offset+bytes_read;
+                                    self.client.push(Action::read(*stream_id, self.stream_read_buffer[range].to_vec()));
                                     self.pull_from_client();
                                 }
                                 if !would_block && bytes_read > 0 {
@@ -434,7 +435,7 @@ impl PvpnConnection {
             self.current_tun_error = to_tun_error(res);
         }
         match res {
-            StreamResult::Ok { bytes_count: _, would_block: _, pending_write } => {
+            StreamResult::Ok { bytes_count: _, start_offset: _, would_block: _, pending_write } => {
                 self.streams.set_poll_enable_wait_for_write(stream_id, *pending_write);
                 if !*pending_write && stream_id > StreamId::TUN_STREAM_ID {
                     self.client.push(Action::done(stream_id));
@@ -498,7 +499,7 @@ impl PvpnConnection {
 
 fn to_tun_error(res: &StreamResult) -> Option<String> {
     match res {
-        StreamResult::Ok { bytes_count: _, would_block: _, pending_write: _ } => None,
+        StreamResult::Ok { bytes_count: _, start_offset: _, would_block: _, pending_write: _ } => None,
         StreamResult::Err(e) => Some(e.to_string()),
         StreamResult::StreamClosed => Some("Stream closed".to_string()),
     }

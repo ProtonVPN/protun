@@ -52,11 +52,11 @@ impl Stream for TunStreamUnix {
                 if bytes_count == 0 {
                     StreamResult::Err(io::Error::new(io::ErrorKind::UnexpectedEof, "tun read: unexpected EOF"))
                 } else {
-                    StreamResult::Ok { bytes_count, would_block: false, pending_write: false }
+                    StreamResult::ok(bytes_count, false, false)
                 }
             }
             Err(e) => if e.kind() == io::ErrorKind::WouldBlock {
-                StreamResult::Ok { bytes_count: 0, would_block: true, pending_write: false }
+                StreamResult::ok(0, true, false)
             } else {
                 StreamResult::Err(e)
             }
@@ -75,16 +75,16 @@ impl Stream for TunStreamUnix {
                     bytes_written += bytes_count;
                 }
                 Err(e) => return if e.kind() == io::ErrorKind::WouldBlock {
-                    StreamResult::Ok { bytes_count: bytes_written, would_block: true, pending_write: false }
+                    StreamResult::ok(bytes_written, true, false)
                 } else {
                     StreamResult::Err(e)
                 }
             }
         }
-        StreamResult::Ok { bytes_count: bytes_written, would_block: false, pending_write: false }
+        StreamResult::ok(bytes_written, false, false)
     }
 
     fn write_from_buffer(&mut self) -> StreamResult {
-        StreamResult::Ok { bytes_count: 0, would_block: false, pending_write: false }
+        StreamResult::ok(0, false, false)
     }
 }

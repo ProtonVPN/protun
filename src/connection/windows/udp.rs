@@ -126,21 +126,13 @@ impl Stream for UdpSocketStream {
             Ok(bytes_count) => {
                 log::trace!("Read {bytes_count} bytes from UDP socket");
                 self.is_readable = true;
-                StreamResult::Ok {
-                    bytes_count,
-                    would_block: false,
-                    pending_write: false,
-                }
+                StreamResult::ok(bytes_count, false, false)
             },
             Err(e) => {
                 log::trace!("Error when read from UDP socket {:?}", e);
                 self.is_readable = false;
                 if e.kind() == io::ErrorKind::WouldBlock {
-                    StreamResult::Ok {
-                        bytes_count: 0,
-                        would_block: true,
-                        pending_write: false,
-                    }
+                    StreamResult::ok(0, true, false)
                 } else {
                     StreamResult::Err(e)
                 }
@@ -159,13 +151,13 @@ impl Stream for UdpSocketStream {
                 } else {
                     log::trace!("Successfuly wrote to UDP socket ({size} bytes)");
                 }
-                StreamResult::Ok { bytes_count: size, would_block: false, pending_write: false }
+                StreamResult::ok(size, false, false)
             }
             Err(e) => {
                 log::trace!("Error when writing to UDP socket {:?}", e);
                 self.is_writable = false;
                 if e.kind() == io::ErrorKind::WouldBlock {
-                    StreamResult::Ok { bytes_count: 0, would_block: true, pending_write: false }
+                    StreamResult::ok(0, true, false)
                 } else {
                     StreamResult::Err(e)
                 }
@@ -174,11 +166,7 @@ impl Stream for UdpSocketStream {
     }
 
     fn write_from_buffer(&mut self) -> StreamResult {
-        StreamResult::Ok {
-            bytes_count: 0,
-            would_block: false,
-            pending_write: false,
-        }
+        StreamResult::ok(0, false, false)
     }
 }
 
