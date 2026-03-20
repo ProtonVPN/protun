@@ -26,15 +26,15 @@ pub const CLIENT_PRIV_KEY_SIZE_BYTES: usize = 32;
 pub const PEER_PUB_KEY_SIZE_BYTES: usize = 32;
 
 /// [CLIENT_PRIV_KEY_SIZE_BYTES] bytes long client private key.
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct WgClientPrivateKey(pub [u8; CLIENT_PRIV_KEY_SIZE_BYTES]);
 
 /// Wrapper around IpAddr to be used in uniffi.
-#[derive(Copy, Clone, Eq, PartialEq, Hash, PartialOrd, Ord)]
+#[derive(Copy, Clone, Debug, Eq, PartialEq, Hash, PartialOrd, Ord)]
 pub struct IpAddress(pub IpAddr);
 
 /// [PEER_PUB_KEY_SIZE_BYTES] bytes long peer public key.
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct WgPeerPublicKey(pub [u8; PEER_PUB_KEY_SIZE_BYTES]);
 
 /// Represents an active VPN connection.
@@ -134,6 +134,7 @@ impl Connection {
 }
 
 #[cfg_attr(feature = "uniffi", derive(uniffi::Record))]
+#[derive(Debug)]
 pub struct InitialConnectionConfig {
     pub wg_private_key: WgClientPrivateKey,
     pub peers: Vec<PeerInfo>,
@@ -164,6 +165,16 @@ pub trait StateChangedCallback: Send + Sync {
     fn on_state_changed(&self, state: State);
 }
 
+/// Blanket implementation to allow using closures as state change callbacks.
+impl<F> StateChangedCallback for F
+where
+    F: Send + Sync + Fn(State) + 'static
+{
+    fn on_state_changed(&self, state: State) {
+        self(state);
+    }
+}
+
 /// Callback interface for receiving events. Avoid doing heavy work in the callback to avoid
 /// blocking the connection thread (delegate to another thread if needed).
 #[cfg_attr(feature = "uniffi", uniffi::export(callback_interface))]
@@ -171,8 +182,19 @@ pub trait EventCallback: Send + Sync {
     fn on_event(&self, event: Event);
 }
 
+/// Blanket implementation to allow using closures as event callback.
+impl<F> EventCallback for F
+where
+    F: Send + Sync + Fn(Event) + 'static
+{
+    fn on_event(&self, event: Event) {
+        self(event);
+    }
+}
+
 /// Represents a candidate peer for connection.
 #[cfg_attr(feature = "uniffi", derive(uniffi::Record))]
+#[derive(Clone, Debug)]
 pub struct PeerInfo {
     /// Unique identifier of connected peer (as defined by client). This id will be available in
     /// connection states when given peer is connecting/connected (see peer_id in [State]).

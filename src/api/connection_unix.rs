@@ -78,3 +78,13 @@ impl Connection {
 pub trait OnSocketFdAvailableCallback: Send + Sync {
     fn on_socket_fd_available(&self, socket_fd: i32);
 }
+
+/// Blanket implementation to allow using closures as state change callbacks.
+impl<F> OnSocketFdAvailableCallback for F
+where
+    F: Send + Sync + Fn(i32) + 'static
+{
+    fn on_socket_fd_available(&self, socket_fd: i32) {
+        self(socket_fd);
+    }
+}
