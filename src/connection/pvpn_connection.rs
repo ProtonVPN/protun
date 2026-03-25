@@ -488,7 +488,7 @@ impl PvpnConnection {
     }
 
     fn emit_event(&self, event: Event) {
-        log::info!("emitting event: {:?}", event);
+        log::debug!("emitting event: {:?}", event);
         self.event_callback.on_event(event);
     }
 }
