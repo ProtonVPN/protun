@@ -39,28 +39,44 @@ pub(crate) enum InternetInterface {
 #[derive(Clone)]
 pub(crate) struct Ipv4InternetInterface {
     interface_metric: u32,
+    any_route_metric: u32,
     pub(crate) local_ip: Ipv4Addr,
     pub(crate) interface_index: u32,
     pub(crate) next_hop: Ipv4Addr,
 }
 
+impl Ipv4InternetInterface {
+    fn effective_metric(&self) -> u32 {
+        self.interface_metric + self.any_route_metric
+    }
+}
+
 impl Display for Ipv4InternetInterface {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        write!(f, "IPv4 address {} -> Next hop {} (Interface {}) (Metric {})", self.local_ip, self.next_hop, self.interface_index, self.interface_metric)
+        write!(f, "IPv4 address {} -> Next hop {} (Interface {}) (Effective Metric {} = Interface Metric {} + Any Route Metric {})",
+            self.local_ip, self.next_hop, self.interface_index, self.effective_metric(), self.interface_index, self.any_route_metric)
     }
 }
 
 #[derive(Clone)]
 pub(crate) struct Ipv6InternetInterface {
     interface_metric: u32,
+    any_route_metric: u32,
     pub(crate) local_ip: Ipv6Addr,
     pub(crate) interface_index: u32,
     pub(crate) next_hop: Ipv6Addr,
 }
 
+impl Ipv6InternetInterface {
+    fn effective_metric(&self) -> u32 {
+        self.interface_metric + self.any_route_metric
+    }
+}
+
 impl Display for Ipv6InternetInterface {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        write!(f, "IPv6 address {} -> Next hop {} (Interface {}) (Metric {})", self.local_ip, self.next_hop, self.interface_index, self.interface_metric)
+        write!(f, "IPv6 address {} -> Next hop {} (Interface {}) (Effective Metric {} = Interface Metric {} + Any Route Metric {})",
+            self.local_ip, self.next_hop, self.interface_index, self.effective_metric(), self.interface_index, self.any_route_metric)
     }
 }
 
@@ -121,8 +137,8 @@ fn get_potential_internet_interfaces() -> core::result::Result<Vec<InternetInter
 
         let mut valid_internet_interfaces: Vec<InternetInterface> = get_internet_interfaces_from_routes(routes, &ip_addresses_by_interface_luid);
         valid_internet_interfaces.sort_by_key(|i| match i { // Sort first by protocol (IPv4 > IPv6) and then by metric (lowest first)
-            InternetInterface::V4(iv4) => (4, iv4.interface_metric),
-            InternetInterface::V6(iv6) => (6, iv6.interface_metric),
+            InternetInterface::V4(iv4) => (4, iv4.effective_metric()),
+            InternetInterface::V6(iv6) => (6, iv6.effective_metric()),
         });
 
         print_addresses(&valid_internet_interfaces);
@@ -140,11 +156,13 @@ fn get_potential_internet_interfaces() -> core::result::Result<Vec<InternetInter
 
 fn print_addresses(valid_internet_interfaces: &[InternetInterface]) {
     for ipvalid_internet_interface in valid_internet_interfaces {
-        let (ipaddr, metric) = match ipvalid_internet_interface {
-            InternetInterface::V4(ipv4_internet_interface) => (IpAddr::V4(ipv4_internet_interface.local_ip), ipv4_internet_interface.interface_metric),
-            InternetInterface::V6(ipv6_internet_interface) => (IpAddr::V6(ipv6_internet_interface.local_ip), ipv6_internet_interface.interface_metric),
+        let (ipaddr, interface_metric, any_route_metric, effective_metric) = match ipvalid_internet_interface {
+            InternetInterface::V4(ipv4_internet_interface) => (IpAddr::V4(ipv4_internet_interface.local_ip),
+                ipv4_internet_interface.interface_metric, ipv4_internet_interface.any_route_metric, ipv4_internet_interface.effective_metric()),
+            InternetInterface::V6(ipv6_internet_interface) => (IpAddr::V6(ipv6_internet_interface.local_ip),
+                ipv6_internet_interface.interface_metric, ipv6_internet_interface.any_route_metric, ipv6_internet_interface.effective_metric()),
         };
-        log::info!("- Found IP address {ipaddr} with route metric {metric}");
+        log::info!("- Found IP Address {ipaddr} with Effective Metric {effective_metric} (Interface Metric {interface_metric} + Any Route Metric {any_route_metric})");
     }
 }
 
@@ -210,6 +228,7 @@ fn create_internet_interface(route: &MIB_IPFORWARD_ROW2, ip_address: &IpAddr) ->
                     if let Ok(interface_metric) = get_ipv4_interface_metric(route) {
                         return Some(InternetInterface::V4(Ipv4InternetInterface {
                             interface_metric,
+                            any_route_metric: route.Metric,
                             local_ip: *ipv4addr,
                             interface_index: route.InterfaceIndex,
                             next_hop: ipv4_next_hop
@@ -227,6 +246,7 @@ fn create_internet_interface(route: &MIB_IPFORWARD_ROW2, ip_address: &IpAddr) ->
                     if let Ok(interface_metric) = get_ipv6_interface_metric(route) {
                         return Some(InternetInterface::V6(Ipv6InternetInterface {
                             interface_metric,
+                            any_route_metric: route.Metric,
                             local_ip: *ipv6addr,
                             interface_index: route.InterfaceIndex,
                             next_hop: ipv6_next_hop
