@@ -30,8 +30,7 @@ private val rustProviderModule = findProperty("protunCoreRustProviderModule") as
 private val coreArtifactId = findProperty("protunCoreArtifactId") as String? ?: "vpn-core"
 private val versionName = findProperty("protunCoreVersionName") as? String ?: getRepoVersionName()
 
-// Update this once we publish this project to GitHub.
-private val githubRepo = "github.com/ProtonVPN/android-app"
+private val githubRepo = "github.com/ProtonVPN/protun"
 
 android {
     namespace = "me.proton.vpn.core"
