@@ -194,8 +194,10 @@ internal class ProtonVpnConnectionManagerImpl(
     override fun disconnect() {
         mainScope.launch {
             sendAction(ProTunVpnService.VpnAction.Disconnect)
-            context.unbindService(serviceConnection)
-            bound = false
+            if (bound) {
+                context.unbindService(serviceConnection)
+                bound = false
+            }
             setState(VpnConnectionState.Disconnected())
         }
     }
