@@ -23,7 +23,7 @@ use pvpnclient::{Action, ActionKind, StreamId, TunnelInfo};
 use pvpnclient::action::OpenStream;
 use pvpnclient::peer::Peer;
 use pvpnclient::vpn::{VpnProtocol, VpnStreamKind};
-
+use smallvec::SmallVec;
 #[cfg(feature = "mio")]
 use crate::connection::CreateTunStream;
 
@@ -297,9 +297,7 @@ impl PvpnConnection {
         self.network_recovery_handler.on_resumed(monotonic_now, || self.client.notify_network_change());
         match poll_results {
             Ok(poll_results) => {
-                for res in &poll_results {
-                    self.handle_poll_result(res);
-                }
+                self.handle_poll_results(poll_results);
             }
             Err(e) => {
                 if e.kind() != ErrorKind::Interrupted {
@@ -321,21 +319,26 @@ impl PvpnConnection {
         }
     }
 
-    fn handle_poll_result(&mut self, res: &PollResult) {
-        if res.is_readable {
-            self.read_from_stream(res.stream_id);
-        }
-        if res.is_writable {
-            if let Some(stream) = self.streams.get_stream(res.stream_id) {
-                let write_result = stream.write_from_buffer();
-                self.handle_stream_write_result(res.stream_id, "poll write", &write_result);
-            } else {
-                log::error!("stream {:?} not found", res.stream_id);
+    fn handle_poll_results(&mut self, results: Vec<PollResult>) {
+        // Use stack-based vector to avoid heap allocations if number of streams is small.
+        let mut readable_streams = SmallVec::<[StreamId; 8]>::new();
+        for res in &results {
+            if res.is_readable {
+                readable_streams.push(res.stream_id);
+            }
+            if res.is_writable {
+                if let Some(stream) = self.streams.get_stream(res.stream_id) {
+                    let write_result = stream.write_from_buffer();
+                    self.handle_stream_write_result(res.stream_id, "poll write", &write_result);
+                } else {
+                    log::error!("stream {:?} not found", res.stream_id);
+                }
+            }
+            if res.is_error {
+                log::error!("poll error on stream {:?}", res.stream_id);
             }
         }
-        if res.is_error {
-            log::error!("poll error on stream {:?}", res.stream_id);
-        }
+        self.read_from_streams(readable_streams);
     }
 
     fn handle_open(&mut self, stream_id: StreamId, open_stream: &OpenStream) {
@@ -361,45 +364,45 @@ impl PvpnConnection {
         }
     }
 
-    fn read_from_stream(&mut self, stream_id: StreamId) {
-        let mut last_tun_maybe_error = None;
-        loop {
-            let stream = match self.streams.get_stream(stream_id) {
-                Some(stream) => stream,
-                None => {
-                    log::error!("stream {:?} not found", stream_id);
-                    break;
-                }
-            };
-            let read_result = stream.read(&mut self.stream_read_buffer[..]);
-            if stream_id == StreamId::TUN_STREAM_ID {
-                last_tun_maybe_error = to_tun_error(&read_result);
-            }
-            match read_result {
-                StreamResult::Ok { bytes_count: bytes_read, would_block, pending_write: _ } => {
-                    if bytes_read > 0 && self.network_recovery_handler.is_network_available() {
-                        // When there's no network, just drop the data from tun device.
-                        self.client.push(Action::read(stream_id, self.stream_read_buffer[..bytes_read].to_vec()));
-                        self.pull_from_client();
+    fn read_from_streams(&mut self, mut stream_ids: SmallVec<[StreamId; 8]>) {
+        while stream_ids.len() > 0 {
+            let mut next_stream_ids = SmallVec::<[StreamId; 8]>::new();
+            for stream_id in &mut stream_ids {
+                match self.streams.get_stream(*stream_id) {
+                    Some(stream) => {
+                        let read_result = stream.read(&mut self.stream_read_buffer[..]);
+                        if *stream_id == StreamId::TUN_STREAM_ID {
+                            self.current_tun_error = to_tun_error(&read_result);
+                        }
+                        match read_result {
+                            StreamResult::Ok { bytes_count: bytes_read, would_block, pending_write: _ } => {
+                                if bytes_read > 0 && self.network_recovery_handler.is_network_available() {
+                                    // When there's no network, just drop the data from tun device.
+                                    self.client.push(Action::read(*stream_id, self.stream_read_buffer[..bytes_read].to_vec()));
+                                    self.pull_from_client();
+                                }
+                                if !would_block && bytes_read > 0 {
+                                    next_stream_ids.push(*stream_id);
+                                }
+                            }
+                            StreamResult::Err(e) => {
+                                log::info!("stream {:?} read error: {:?}", stream_id, e);
+                                self.handle_stream_error(*stream_id, &e);
+                            }
+                            StreamResult::StreamClosed => {
+                                log::info!("closing stream {:?}", stream_id);
+                                self.client.push(Action::close(*stream_id));
+                            }
+                        }
+                    },
+                    None => {
+                        log::error!("stream {:?} not found", stream_id);
                     }
-                    if would_block || bytes_read == 0 {
-                        break;
-                    }
-                }
-                StreamResult::Err(e) => {
-                    log::info!("stream {:?} read error: {:?}", stream_id, e);
-                    self.handle_stream_error(stream_id, &e);
-                    break;
-                }
-                StreamResult::StreamClosed => {
-                    log::info!("closing stream {:?}", stream_id);
-                    self.client.push(Action::close(stream_id));
-                    break;
                 }
             }
-        }
-        if stream_id == StreamId::TUN_STREAM_ID {
-            self.current_tun_error = last_tun_maybe_error;
+            // next_stream_ids now have all the streams that still have data to read. use them as
+            // stream_ids for the next iteration.
+            stream_ids = next_stream_ids;
         }
     }
 
