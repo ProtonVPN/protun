@@ -38,7 +38,10 @@ impl SocketFactoryUnix {
 }
 
 const UDP_SEND_BUFFER_SIZE: usize = 3 * 1024 * 1024;
-const UDP_RECV_BUFFER_SIZE: usize = 3 * 1024 * 1024;
+const UDP_RECV_BUFFER_SIZE: usize = 512 * 1024;
+
+const TCP_SEND_BUFFER_SIZE: usize = 512 * 1024;
+const TCP_RECV_BUFFER_SIZE: usize = 512 * 1024;
 
 impl MioSocketFactory for SocketFactoryUnix {
 
@@ -47,6 +50,8 @@ impl MioSocketFactory for SocketFactoryUnix {
         // (needed by android to protect the socket from being routed via tun)
         let sock = Socket::new(Domain::for_address(addr), Type::STREAM, None)?;
         sock.set_nonblocking(true)?;
+        sock.set_send_buffer_size(TCP_SEND_BUFFER_SIZE)?;
+        sock.set_recv_buffer_size(TCP_RECV_BUFFER_SIZE)?;
         let fd = sock.as_raw_fd();
         if let Some(callback) = &self.on_socket_fd_available_callback {
             callback.on_socket_fd_available(fd);
