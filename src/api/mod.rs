@@ -24,6 +24,9 @@ pub mod windows;
 #[cfg(feature = "unix")]
 pub mod connection_unix;
 
+#[cfg(feature = "local-agent")]
+pub mod local_agent;
+
 pub mod connection;
 pub mod events;
 pub mod logger;

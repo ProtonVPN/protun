@@ -28,6 +28,7 @@ use crate::api::{
         },
     },
 };
+use crate::api::connection::IpAddress;
 
 /// Set of integration tests using:
 /// - Real [Streams], [Connection] and [PvpnConnection] under test
@@ -44,7 +45,7 @@ fn happy_path_udp_connection() {
 
     let expected_peer = PeerConnectionInfo {
         peer_id: "peer_1".to_string(),
-        entry_ip: server_addr.ip().to_string(),
+        entry_ip: IpAddress(server_addr.ip()),
         protocol: Protocol::WireguardUdp,
         port: server_addr.port()
     };
@@ -61,7 +62,7 @@ fn happy_path_udp_connection() {
     helper.send_udp_to(&udp_server_socket, &client_addr, &DummyProtocolPacket::HandshakeResponse).unwrap();
     helper.expect_state(|state| matches!(
         &state.connection_state,
-        ConnectionState::Connected { peer } if peer == &expected_peer)
+        ConnectionState::Connected { peer, .. } if peer == &expected_peer)
     );
 
     // send data to TUN and receive it on server socket
@@ -94,7 +95,7 @@ fn happy_path_tcp_connection() {
     assert!(matches!(handshake, DummyProtocolPacket::Handshake(_, key) if key == client_private_key.to_vec()));
     let expected_peer = PeerConnectionInfo {
         peer_id: "peer_1".to_string(),
-        entry_ip: server_addr.ip().to_string(),
+        entry_ip: IpAddress(server_addr.ip()),
         protocol: Protocol::WireguardTcp,
         port: server_addr.port()
     };
@@ -107,7 +108,7 @@ fn happy_path_tcp_connection() {
     helper.send_tcp(&mut tcp_server_socket, &DummyProtocolPacket::HandshakeResponse).unwrap();
     helper.expect_state(|state| matches!(
         &state.connection_state,
-        ConnectionState::Connected { peer } if peer == &expected_peer
+        ConnectionState::Connected { peer, .. } if peer == &expected_peer
     ));
 
     // send tun data and receive it on server socket

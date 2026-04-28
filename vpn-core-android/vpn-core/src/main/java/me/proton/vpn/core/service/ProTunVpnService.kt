@@ -56,7 +56,7 @@ internal interface ProTunVpnServiceCallback {
 
 internal class ProTunVpnService : VpnService() {
 
-    // Coroutine scope that will be cancelled when the service is destroyed
+    // Coroutine scope that will be canceled when the service is destroyed
     private val serviceScope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
     private var binder: ProTunVpnServiceBinder? = null
     lateinit var socketProtectCallback: ProTunSocketProtectCallback

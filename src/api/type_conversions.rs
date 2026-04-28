@@ -23,6 +23,9 @@ use crate::api::connection::{CLIENT_PRIV_KEY_SIZE_BYTES, IpAddress, PEER_PUB_KEY
 use crate::api::events::Event;
 use crate::connection::pvpn_client::PvpnClientMode;
 
+#[cfg(feature = "local-agent")]
+use crate::api::local_agent::NetshieldLevel;
+
 #[cfg(feature = "uniffi")]
 uniffi::custom_type!(WgClientPrivateKey, Vec<u8>);
 #[cfg(feature = "uniffi")]
@@ -106,6 +109,28 @@ impl From<TunnelStats> for Event {
             time_since_last_handshake: value.time_since_last_handshake,
             estimated_loss: value.estimated_loss,
             estimated_round_trip_time: value.estimated_rtt,
+        }
+    }
+}
+
+#[cfg(feature = "local-agent")]
+impl From<NetshieldLevel> for pvpnclient::NetshieldLevel {
+    fn from(value: NetshieldLevel) -> Self {
+        match value {
+            NetshieldLevel::None => pvpnclient::NetshieldLevel::None,
+            NetshieldLevel::MalwareFilter => pvpnclient::NetshieldLevel::MalwareFilter,
+            NetshieldLevel::AdsAndMalwareFilter => pvpnclient::NetshieldLevel::AdsAndMalwareFilter,
+        }
+    }
+}
+
+#[cfg(feature = "local-agent")]
+impl From<pvpnclient::NetshieldLevel> for NetshieldLevel {
+    fn from(value: pvpnclient::NetshieldLevel) -> Self {
+        match value {
+            pvpnclient::NetshieldLevel::None => NetshieldLevel::None,
+            pvpnclient::NetshieldLevel::MalwareFilter => NetshieldLevel::MalwareFilter,
+            pvpnclient::NetshieldLevel::AdsAndMalwareFilter => NetshieldLevel::AdsAndMalwareFilter,
         }
     }
 }

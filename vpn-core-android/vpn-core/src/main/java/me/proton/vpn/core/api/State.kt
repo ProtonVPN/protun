@@ -59,9 +59,15 @@ sealed interface VpnConnectionState : Parcelable {
         val waitReasons: List<PeerConnectionWaitReason>,
     ): VpnConnectionState
 
+    data class ConnectingToLocalAgent(
+        val connection: PeerConnection,
+        val waitReason: AgentConnectionWaitReason?,
+    ): VpnConnectionState
+
     data class Connected(
         val connection: PeerConnection,
         val connectedSince: Date,
+        val agentConnectionInfo: AgentConnectionInfo?
     ): VpnConnectionState
 }
 
@@ -72,6 +78,12 @@ sealed interface PeerConnectionWaitReason : Parcelable {
      * Device currently has no network (airplane mode, no signal, etc.)
      */
     data object WaitingForNetwork : PeerConnectionWaitReason
+}
+
+@Parcelize
+sealed interface AgentConnectionWaitReason : Parcelable {
+    data object SoftJailed : AgentConnectionWaitReason
+    data class HardJailed(val jails: List<WaitJailReason>) : AgentConnectionWaitReason
 }
 
 @Parcelize
@@ -100,9 +112,55 @@ sealed interface VpnDisconnectError : Parcelable {
     data object VpnPermissionMissing: VpnDisconnectError
 }
 
+/**
+ * Local agent jails. Require app/user action to be unjailed ([WaitJailReason.Internal] will
+ * be handled internally by the library). Messages are not localized and suitable only for
+ * logging/debugging.
+ */
+@Parcelize
+sealed interface WaitJailReason : Parcelable {
+    data class Need2FA(val message: String) : WaitJailReason
+    data class BadUserBehavior(val message: String) : WaitJailReason
+    data class DisabledUser(val message: String) : WaitJailReason
+    data class WaitingClientChallengeReply(val message: String) : WaitJailReason
+    data class LowPlan(val message: String) : WaitJailReason
+    data class PendingInvoice(val message: String) : WaitJailReason
+    data class SessionOverLimit(val message: String) : WaitJailReason
+
+    // Unknown error codes, not supported in this version.
+    data class Other(val code: ULong, val message: String) : WaitJailReason
+}
+
 @Parcelize
 data class PeerConnection(
     val protocol: VpnProtocol,
     val id: String,
     val entryAddr: InetSocketAddress,
 ): Parcelable
+
+/**
+ * Information available after establishing a connection to the local agent. null field values
+ * indicate that the server didn't provide the value at the moment.
+ */
+@Parcelize
+data class AgentConnectionInfo(
+    val serverExitV4: String?,
+    val serverExitV6: String?,
+    val userIspIP: String?,
+    val userIspCountryCode: String?,
+    val userIspName: String?,
+    val userIspCoordinates: LocationCoordinates?,
+    val settings: LocalAgentSettings, // Actual settings applied by the server.
+    val restrictions: List<Restriction>,
+) : Parcelable
+
+@Parcelize
+data class LocationCoordinates(
+    val latitude: Double,
+    val longitude: Double,
+) : Parcelable
+
+enum class Restriction {
+    Streaming,
+    P2P
+}

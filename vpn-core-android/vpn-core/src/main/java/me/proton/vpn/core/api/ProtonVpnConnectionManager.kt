@@ -123,10 +123,31 @@ sealed interface PacketCaptureFile : Parcelable {
 /**
  * Current connection stats. Will be emitted in [ProtonVpnConnectionManager.connectionStats].
  */
+@Parcelize
 data class ConnectionStats(
     val receivedBytes: ULong,
     val sentBytes: ULong,
     val timeSinceLastHandshake: Duration,
     val estimatedLoss: Float,
     val estimatedRoundTripTime: Duration
-)
+) : Parcelable
+
+/**
+ * Local-agent settings. Used with [ConnectionMode.LocalAgent.settings] and
+ * [ProtonVpnConnectionManager.updateLocalAgentSettings] to set values (null means "use default").
+ * When returned in connection state (see [AgentConnectionInfo.settings]) it carries settings as
+ * applied by the server (null means "no value provided" in that case).
+ */
+@Parcelize
+data class LocalAgentSettings(
+    val splitTcp: Boolean?,
+    val netshieldLevel: NetShieldLevel?,
+    val softJail: Boolean?,
+    val portForwarding: Boolean?,
+    val randomNat: Boolean?,
+    val circumventionRouting: Boolean?,
+) : Parcelable
+
+enum class NetShieldLevel {
+    None, MalwareFilter, AdsAndMalwareFilter
+}

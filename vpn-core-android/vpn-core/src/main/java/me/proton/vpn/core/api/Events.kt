@@ -29,6 +29,23 @@ import kotlinx.parcelize.Parcelize
 sealed interface VpnConnectionEvent : Parcelable {
     data class PacketCaptureStarted(val info: PacketCaptureInfo) : VpnConnectionEvent
     data class PacketCaptureStopped(val reason: PacketCaptureStopReason) : VpnConnectionEvent
+    data class Error(val error: VpnErrorEvent) : VpnConnectionEvent
+}
+
+@Parcelize
+sealed interface VpnErrorEvent : Parcelable {
+    data object ApiSessionExpired : VpnErrorEvent
+    data object CertificateRefreshFatalError : VpnErrorEvent
+    data class LocalAgentSettingPolicyRefused(val setting: LocalAgentSettingType) : VpnErrorEvent
+}
+
+enum class LocalAgentSettingType {
+    NetshieldLevel,
+    Bouncing,
+    PortForwarding,
+    SplitTcp,
+    SafeMode,
+    RandomNat,
 }
 
 @Parcelize

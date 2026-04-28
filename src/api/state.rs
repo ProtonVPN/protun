@@ -15,6 +15,10 @@
 // You should have received a copy of the GNU General Public License
 // along with ProtonVPN.  If not, see <https://www.gnu.org/licenses/>.
 
+use crate::api::connection::IpAddress;
+#[cfg(feature = "local-agent")]
+use crate::api::local_agent::{AgentConnectionInfo, WaitJailReason};
+
 /// Combined state of the VPN connection and the TUN interface.
 #[cfg_attr(feature = "uniffi", derive(uniffi::Record))]
 #[derive(Clone, Debug, PartialEq)]
@@ -46,9 +50,22 @@ pub enum ConnectionState {
         wait_reasons: Vec<PeerConnectionWaitReason>,
     },
 
+    /// In local-agent mode, library established VPN connection and is connecting to local agent.
+    #[cfg(feature = "local-agent")]
+    ConnectingToLocalAgent {
+        peer: PeerConnectionInfo,
+        wait_reason: Option<AgentConnectionWaitReason>,
+    },
+
     /// Connection to [peer] is established.
+    /// In non-local-agent mode: VPN connection is established.
+    /// In local-agent mode: VPN and local agent connections are established. [agent_info] will not
+    /// be None in this mode.
     Connected {
         peer: PeerConnectionInfo,
+
+        #[cfg(feature = "local-agent")]
+        agent_info: Option<AgentConnectionInfo>,
     },
 }
 
@@ -56,7 +73,7 @@ pub enum ConnectionState {
 #[derive(PartialEq, Clone, Debug)]
 pub struct PeerConnectionInfo {
     pub peer_id: String,
-    pub entry_ip: String,
+    pub entry_ip: IpAddress,
     pub protocol: Protocol,
     pub port: u16,
 }
@@ -71,6 +88,14 @@ pub enum PeerConnectionWaitReason {
     /// There is I/O problem with TUN interface. Calling code might need to wait, recreate TUN or
     /// disconnect (when it was caused by connection by another VPN app).
     TunIoError { message: String },
+}
+
+#[cfg(feature = "local-agent")]
+#[cfg_attr(feature = "uniffi", derive(uniffi::Enum))]
+#[derive(Clone, Debug, PartialEq)]
+pub enum AgentConnectionWaitReason {
+    SoftJailed,
+    HardJailed { jails: Vec<WaitJailReason> },
 }
 
 #[cfg_attr(feature = "uniffi", derive(uniffi::Enum))]

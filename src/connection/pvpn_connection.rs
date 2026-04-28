@@ -34,9 +34,9 @@ use crate::{
     },
     connection::{pvpn_client::PvpnClient, streams::{PendingWrite, PollResult, PollWaker, StreamResult, Streams, WouldBlock}},
 };
-use crate::api::connection::{ConnectivityEvent, EventCallback, PcapFileInfo, StateChangedCallback};
+use crate::api::connection::{ConnectivityEvent, EventCallback, PcapFileInfo, StateChangedCallback, IpAddress};
 use crate::api::events::{CaptureStopReason, Event};
-use crate::api::state::{InterfaceState, ConnectionState, PeerConnectionWaitReason, VpnState};
+use crate::api::state::{ConnectionState, PeerConnectionWaitReason, VpnState};
 use crate::connection::network_recovery_handler::NetworkRecoveryHandler;
 use crate::connection::pcap_stream::PcapStream;
 
@@ -510,6 +510,8 @@ impl PvpnConnection {
             Some(TunnelInfo::Connected { protocol, peer_addr, peer, .. }) => {
                 ConnectionState::Connected {
                     peer: get_peer_connection_info(&peer, &peer_addr, *protocol),
+                    #[cfg(feature = "local-agent")]
+                    agent_info: None,
                 }
             }
             Some(TunnelInfo::Connecting { protocol, peer_addr, peer, .. }) => {
@@ -560,7 +562,7 @@ fn get_peer_id(peer: &Peer, peer_addr: &SocketAddr) -> String {
 fn get_peer_connection_info(peer: &Peer, peer_addr: &SocketAddr, protocol: VpnProtocol) -> PeerConnectionInfo {
     PeerConnectionInfo {
         peer_id: get_peer_id(peer, peer_addr),
-        entry_ip: peer_addr.ip().to_string(),
+        entry_ip: IpAddress(peer_addr.ip()),
         protocol: protocol.into(),
         port: peer_addr.port(),
     }

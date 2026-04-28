@@ -33,6 +33,47 @@ pub enum Event {
 
     PacketCaptureStarted { info: PcapFileInfo },
     PacketCaptureStopped { reason: CaptureStopReason },
+
+    #[cfg(feature = "local-agent")]
+    LocalAgentStats {
+        bytes_received: Option<u64>,
+        bytes_sent: Option<u64>,
+        malicious_blocked: Option<u64>,
+        ads_blocked: Option<u64>,
+        trackers_blocked: Option<u64>,
+        adult_content_blocked: Option<u64>,
+        data_saved: Option<u64>,
+    },
+
+    #[cfg(feature = "local-agent")]
+    Error { error: ErrorEvent },
+}
+
+#[cfg_attr(feature = "uniffi", derive(uniffi::Enum))]
+#[derive(Debug)]
+#[cfg(feature = "local-agent")]
+pub enum ErrorEvent {
+
+    /// Client should provide a new fork selector. Care should be taken to not create a forking loop
+    /// where a forked session fails repeatedly.
+    ApiSessionExpired,
+
+    LocalAgentSettingPolicyRefused { setting: LocalAgentSettingType },
+
+    /// Library was unable to refresh the certificate and gave up. Client should close the connection.
+    CertificateRefreshFatalError,
+}
+
+#[cfg_attr(feature = "uniffi", derive(uniffi::Enum))]
+#[cfg(feature = "local-agent")]
+#[derive(Debug)]
+pub enum LocalAgentSettingType {
+    NetshieldLevel,
+    Bouncing,
+    PortForwarding,
+    SplitTcp,
+    SafeMode,
+    RandomNat,
 }
 
 #[cfg_attr(feature = "uniffi", derive(uniffi::Enum))]

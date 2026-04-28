@@ -17,6 +17,8 @@
 
 use crate::api::connection::StateChangedCallback;
 use crate::api::state::{ConnectionState, DisconnectReason, PeerConnectionInfo, PeerConnectionWaitReason, VpnState};
+#[cfg(feature = "local-agent")]
+use crate::api::state::AgentConnectionWaitReason;
 use crate::utils::windows::registry_editor::set_network_adapter_status_text;
 
 pub struct WindowsStateChangedCallback {
@@ -42,7 +44,9 @@ fn map_status_to_text(connection_state: &ConnectionState) -> String {
     match connection_state {
         ConnectionState::Disconnected { error } => disconnected_to_string(error),
         ConnectionState::Connecting { peers, wait_reasons } => connecting_to_string(peers, wait_reasons),
-        ConnectionState::Connected { peer } => connected_to_string(peer),
+        #[cfg(feature = "local-agent")]
+        ConnectionState::ConnectingToLocalAgent { peer, wait_reason } => connecting_local_agent_to_string(peer, wait_reason),
+        ConnectionState::Connected { peer, .. } => connected_to_string(peer),
     }
 }
 
@@ -71,4 +75,16 @@ fn connecting_to_string(peers: &[PeerConnectionInfo], wait_reasons: &[PeerConnec
 
 fn connected_to_string(peer: &PeerConnectionInfo) -> String {
     format!("Connected to {}", peer.peer_id)
+}
+
+#[cfg(feature = "local-agent")]
+fn connecting_local_agent_to_string(
+    peer: &PeerConnectionInfo,
+    wait_reason: &Option<AgentConnectionWaitReason>,
+) -> String {
+    if wait_reason.is_some() {
+        format!("Connecting to {} (waiting...)", peer.peer_id)
+    } else {
+        format!("Connecting to {}", peer.peer_id)
+    }
 }

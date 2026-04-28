@@ -60,6 +60,8 @@ class MainViewModel @Inject constructor(
                 VpnConnectionState.Loading -> ""
                 is VpnConnectionState.Connected -> "Connected: ${connectionState.connection.toDisplay()}"
                 is VpnConnectionState.Connecting -> "Connecting... ${connectionState.waitReasons}"
+                is VpnConnectionState.ConnectingToLocalAgent ->
+                    "Connecting to local agent... ${connectionState.waitReason}"
                 is VpnConnectionState.Disconnected -> if (connectionState.error != null) {
                     "Disconnected: ${connectionState.error}"
                 } else {
@@ -84,6 +86,8 @@ class MainViewModel @Inject constructor(
                     Event.ShowMessage("Packet capture started: ${event.info.file}")
                 is VpnConnectionEvent.PacketCaptureStopped ->
                     Event.ShowMessage("Packet capture stopped: ${event.reason.javaClass.simpleName}")
+                is VpnConnectionEvent.Error ->
+                    Event.ShowMessage("Error: ${event.error.javaClass.simpleName}")
             }
             events.emit(uiEvent)
         }.launchIn(viewModelScope)

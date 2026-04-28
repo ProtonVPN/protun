@@ -133,10 +133,7 @@ internal class ConnectionManager(
                 )
             }
             is EstablishTun.Result.Failure -> {
-                state.value = VpnState(
-                    interfaceUp = false,
-                    VpnConnectionState.Disconnected(establishResult.reason)
-                )
+                state.value = VpnState.disconnectedWith(establishResult.reason)
             }
         }
     }
@@ -194,6 +191,7 @@ internal class ConnectionManager(
                     is ConnectionState.Connected -> VpnConnectionState.Connected(
                         connectionState.peer.toCoreApi(),
                         connectedSince = activeConnection.startedAt,
+                        agentConnectionInfo = null,
                     )
                 }
                 state.value = VpnState(proTunState.interfaceState.isUp, connectionState)
