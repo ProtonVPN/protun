@@ -58,7 +58,7 @@ import java.time.Duration
  */
 interface ProtonVpnConnectionManager {
 
-    val state: StateFlow<VpnConnectionState>
+    val state: StateFlow<VpnState>
     val events: Flow<VpnConnectionEvent>
     val connectionStats: Flow<ConnectionStats>
 

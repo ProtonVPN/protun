@@ -30,13 +30,13 @@ use crate::connection::CreateTunStream;
 use crate::{
     api::{
         connection::{InitialConnectionConfig, PeerInfo, WgClientPrivateKey},
-        state::{PeerConnectionInfo, Protocol, WaitReason},
+        state::{PeerConnectionInfo, Protocol},
     },
     connection::{pvpn_client::PvpnClient, streams::{PendingWrite, PollResult, PollWaker, StreamResult, Streams, WouldBlock}},
 };
 use crate::api::connection::{ConnectivityEvent, EventCallback, PcapFileInfo, StateChangedCallback};
 use crate::api::events::{CaptureStopReason, Event};
-use crate::api::state::State;
+use crate::api::state::{InterfaceState, ConnectionState, PeerConnectionWaitReason, VpnState};
 use crate::connection::network_recovery_handler::NetworkRecoveryHandler;
 use crate::connection::pcap_stream::PcapStream;
 
@@ -110,7 +110,7 @@ struct PvpnConnection {
     state_change_callback: Box<dyn StateChangedCallback>,
     event_callback: Box<dyn EventCallback>,
     message_receiver: mpsc::Receiver<PvpnMessage>,
-    state: State,
+    connection_state: ConnectionState,
     peers: Vec<PeerInfo>,
     stream_read_buffer: Box<[u8; STREAM_BUFFER_SIZE]>,
     should_stop: bool,
@@ -136,7 +136,7 @@ impl PvpnConnection {
             state_change_callback,
             event_callback,
             message_receiver,
-            state: State::Disconnected { error: None },
+            connection_state: ConnectionState::Disconnected { error: None },
             peers,
             stream_read_buffer: Box::new([0; STREAM_BUFFER_SIZE]),
             should_stop: false,
@@ -148,7 +148,11 @@ impl PvpnConnection {
         ret.activate_peers();
         if !ret.network_recovery_handler.is_network_available() {
             ret.client.notify_network_down();
-            ret.set_state(State::WaitingForAction { reason: WaitReason::WaitingForNetwork })
+            ret.set_state(
+                ConnectionState::Connecting {
+                    peers: vec![],
+                    wait_reasons: vec!(PeerConnectionWaitReason::WaitingForNetwork)
+                })
         }
         if let Some(pcap_file_info) = pcap_file_info {
             ret.start_packet_capture(pcap_file_info);
@@ -172,22 +176,19 @@ impl PvpnConnection {
             self.stop_packet_capture(|file| CaptureStopReason::Disconnected { file });
         }
         // Make sure to enter disconnected state.
-        match &self.state {
-            State::Disconnected { .. } => {}
-            _ => self.set_state(State::Disconnected { error: None })
+        match &self.connection_state {
+            ConnectionState::Disconnected { .. } => {}
+            _ => self.set_state(ConnectionState::Disconnected { error: None })
         }
-        log::info!("pvpn connection loop finished with state: {:?}", self.state);
+        log::info!("pvpn connection loop finished with state: {:?}", self.connection_state);
     }
 
     fn update_state(&mut self) {
-        if self.network_recovery_handler.is_network_available() {
-            let info = self.client.get_tunnel_info();
-            self.set_state(to_client_state(info, self.current_tun_error.clone()));
-            if let State::Connected { .. } = &self.state {
-                self.network_recovery_handler.on_connected();
-            }
-        } else {
-            self.set_state(State::WaitingForAction { reason: WaitReason::WaitingForNetwork })
+        let info = self.client.get_tunnel_info();
+        let connection_state = self.get_peer_connection_state(&info);
+        self.set_state(connection_state);
+        if let ConnectionState::Connected { .. } = &self.connection_state {
+            self.network_recovery_handler.on_connected();
         }
     }
 
@@ -203,11 +204,14 @@ impl PvpnConnection {
                     self.set_peers(peers);
                 },
                 PvpnMessage::ConnectivityChange(event) => {
-                    self.on_connectivity_change(event);
+                    let tunnel_info = self.client.get_tunnel_info();
+                    self.on_connectivity_change(event, &tunnel_info);
                 },
                 #[cfg(feature = "mio")]
                 PvpnMessage::UpdateTun(create_tun_stream) => {
-                    self.streams.update_tun(create_tun_stream);
+                    if let Err(e) = self.streams.update_tun(create_tun_stream) {
+                        log::error!("failed to update tun: {:?}", e);
+                    }
                 },
                 PvpnMessage::UpdateWgPrivateKey(wg_private_key) => {
                     self.client.set_private_key(&wg_private_key.into());
@@ -454,13 +458,13 @@ impl PvpnConnection {
         }
     }
 
-    fn on_connectivity_change(&mut self, event: ConnectivityEvent) {
+    fn on_connectivity_change(&mut self, event: ConnectivityEvent, tunnel_info: &Option<TunnelInfo>) {
         self.network_recovery_handler.on_connectivity_change(event);
         if self.network_recovery_handler.is_network_available() {
             self.client.notify_network_change();
         } else {
             self.client.notify_network_down();
-            self.set_state(State::WaitingForAction { reason: WaitReason::WaitingForNetwork })
+            self.set_state(network_unavailable_state(tunnel_info, &self.current_tun_error));
         }
     }
 
@@ -485,17 +489,49 @@ impl PvpnConnection {
         }
     }
 
-    fn set_state(&mut self, state: State) {
-        if state != self.state {
-            log::info!("state: {:?}", state);
-            self.state = state;
-            self.state_change_callback.on_state_changed(self.state.clone());
+    fn set_state(&mut self, connection_state: ConnectionState) {
+        if connection_state != self.connection_state {
+            log::info!("connection state: {:?}", connection_state);
+            self.connection_state = connection_state;
+            self.state_change_callback.on_state_changed(VpnState {
+                interface_state: self.streams.get_tun_interface_state(),
+                connection_state: self.connection_state.clone(),
+            });
         }
     }
 
     fn emit_event(&self, event: Event) {
         log::debug!("emitting event: {:?}", event);
         self.event_callback.on_event(event);
+    }
+
+    fn get_peer_connection_state(&mut self, tunnel_info: &Option<TunnelInfo>) -> ConnectionState {
+        if !self.network_recovery_handler.is_network_available() {
+            return network_unavailable_state(tunnel_info, &self.current_tun_error);
+        }
+        let mut wait_reasons = vec![];
+        if let Some(message) = &self.current_tun_error {
+            wait_reasons.push(PeerConnectionWaitReason::TunIoError { message: message.clone() });
+        }
+        match tunnel_info {
+            Some(TunnelInfo::Connected { protocol, peer_addr, peer, .. }) => {
+                ConnectionState::Connected {
+                    peer: get_peer_connection_info(&peer, &peer_addr, *protocol),
+                }
+            }
+            Some(TunnelInfo::Connecting { protocol, peer_addr, peer, .. }) => {
+                ConnectionState::Connecting {
+                    peers: vec![get_peer_connection_info(&peer, &peer_addr, *protocol)],
+                    wait_reasons,
+                }
+            }
+            Some(TunnelInfo::Disconnected { .. }) if !self.peers.is_empty() => ConnectionState::Connecting {
+                peers: vec![],
+                wait_reasons,
+            },
+            Some(TunnelInfo::Disconnected { .. }) => ConnectionState::Disconnected { error: None },
+            None => ConnectionState::Disconnected { error: None },
+        }
     }
 }
 
@@ -507,21 +543,21 @@ fn to_tun_error(res: &StreamResult) -> Option<String> {
     }
 }
 
-fn to_client_state(tunnel_info: Option<TunnelInfo>, last_tun_error: Option<String>) -> State {
-    match tunnel_info {
+fn network_unavailable_state(tunnel_info: &Option<TunnelInfo>, last_tun_error: &Option<String>) -> ConnectionState {
+    let mut wait_reasons = vec![PeerConnectionWaitReason::WaitingForNetwork];
+    if let Some(message) = last_tun_error {
+        wait_reasons.push(PeerConnectionWaitReason::TunIoError { message: message.clone() });
+    }
+    let peers = match tunnel_info {
         Some(TunnelInfo::Connected { protocol, peer_addr, peer, .. }) => {
-            State::Connected {
-                peer: get_peer_connection_info(&peer, &peer_addr, protocol)
-            }
+            vec![get_peer_connection_info(&peer, &peer_addr, *protocol)]
         }
         Some(TunnelInfo::Connecting { protocol, peer_addr, peer, .. }) => {
-            match last_tun_error {
-                None => State::Connecting { peers: vec![get_peer_connection_info(&peer, &peer_addr, protocol)] },
-                Some(error) => State::WaitingForAction { reason: WaitReason::TunIoError { message: error } }
-            }
+            vec![get_peer_connection_info(&peer, &peer_addr, *protocol)]
         }
-        _ => State::Connecting { peers: vec![] },
-    }
+        _ => vec![]
+    };
+    ConnectionState::Connecting { peers, wait_reasons }
 }
 
 fn get_peer_id(peer: &Peer, peer_addr: &SocketAddr) -> String {

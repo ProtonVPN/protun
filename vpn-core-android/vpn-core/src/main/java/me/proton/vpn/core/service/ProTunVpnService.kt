@@ -41,7 +41,7 @@ import me.proton.vpn.core.api.Logger
 import me.proton.vpn.core.api.PacketCaptureInfo
 import me.proton.vpn.core.api.Peer
 import me.proton.vpn.core.api.SystemEventHandler
-import me.proton.vpn.core.api.VpnConnectionState
+import me.proton.vpn.core.api.VpnState
 import me.proton.vpn.core.internal.DependencyContainer
 import uniffi.protun.Event
 import uniffi.protun.EventCallback
@@ -50,7 +50,7 @@ import uniffi.protun.OnSocketFdAvailableCallback
 import java.lang.ref.WeakReference
 
 internal interface ProTunVpnServiceCallback {
-    fun onStateChanged(state: VpnConnectionState)
+    fun onStateChanged(state: VpnState)
     fun onEvent(event: Event)
 }
 
@@ -202,7 +202,7 @@ internal class ProTunVpnService : VpnService() {
         binder?.notifyEvent(event)
     }
 
-    val state get(): VpnConnectionState = manager.state.value
+    val state get(): VpnState = manager.state.value
 
     sealed interface VpnAction : Parcelable {
         @Parcelize data class Connect(val config: InitialConfig) : VpnAction
@@ -236,7 +236,7 @@ internal class ProTunVpnServiceBinder(
 
     private val callbacks = mutableSetOf<ProTunVpnServiceCallback>()
 
-    fun getState(): VpnConnectionState = weakService.get()?.state ?: VpnConnectionState.Disconnected()
+    fun getState(): VpnState = weakService.get()?.state ?: VpnState.Default
 
     fun registerCallback(callback: ProTunVpnServiceCallback) {
         callbacks.add(callback)
@@ -246,7 +246,7 @@ internal class ProTunVpnServiceBinder(
         callbacks.remove(callback)
     }
 
-    fun notifyStateChanged(state: VpnConnectionState) {
+    fun notifyStateChanged(state: VpnState) {
         callbacks.forEach { it.onStateChanged(state) }
     }
 

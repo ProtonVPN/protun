@@ -51,6 +51,7 @@ import me.proton.vpn.core.api.ProtonVpnConnectionManager
 import me.proton.vpn.core.api.VpnConnectionEvent
 import me.proton.vpn.core.api.VpnConnectionState
 import me.proton.vpn.core.api.VpnDisconnectError
+import me.proton.vpn.core.api.VpnState
 import me.proton.vpn.core.internal.toCoreApi
 import me.proton.vpn.core.service.ProTunVpnService
 import me.proton.vpn.core.service.ProTunVpnServiceBinder
@@ -77,12 +78,12 @@ internal class ProtonVpnConnectionManagerImpl(
         .map { event -> event.toCoreApi() }
         .filterNotNull()
 
-    private val _state = MutableStateFlow<VpnConnectionState>(VpnConnectionState.Disconnected())
-    override val state: StateFlow<VpnConnectionState> = _state
+    private val _state = MutableStateFlow<VpnState>(VpnState.Default)
+    override val state: StateFlow<VpnState> = _state
 
     // Cold flow that request connection stats every second when connected.
     private fun createStatsRequestFlow() = state
-        .map { it is VpnConnectionState.Connected }
+        .map { it.connectionState is VpnConnectionState.Connected }
         .distinctUntilChanged()
         .flatMapLatest { isConnected ->
             if (isConnected) {
@@ -111,7 +112,7 @@ internal class ProtonVpnConnectionManagerImpl(
 
             private var serviceBinder: ProTunVpnServiceBinder? = null
             val callback = object : ProTunVpnServiceCallback {
-                override fun onStateChanged(state: VpnConnectionState) {
+                override fun onStateChanged(state: VpnState) {
                     // Don't accept state changes after disconnecting
                     if (bound)
                         setState(state)
@@ -124,7 +125,7 @@ internal class ProtonVpnConnectionManagerImpl(
 
             override fun onBindingDied(name: ComponentName?) {
                 bound = false
-                _state.value = VpnConnectionState.Disconnected()
+                _state.value = VpnState.Default
                 super.onBindingDied(name)
             }
 
@@ -136,7 +137,7 @@ internal class ProtonVpnConnectionManagerImpl(
 
             override fun onServiceDisconnected(name: ComponentName) {
                 serviceBinder?.unregisterCallback(callback)
-                setState(VpnConnectionState.Disconnected())
+                setState(VpnState.Default)
             }
         }
     }
@@ -152,8 +153,8 @@ internal class ProtonVpnConnectionManagerImpl(
             }
             if (!bound) {
                 context.unbindService(serviceConnection)
-                setState(VpnConnectionState.Disconnected(
-                    VpnDisconnectError.ServiceError("Failed to bind to VPN service"))
+                setState(
+                    VpnState.disconnectedWith(VpnDisconnectError.ServiceError("Failed to bind to VPN service"))
                 )
             } else {
                 sendAction(ProTunVpnService.VpnAction.Connect(config))
@@ -198,7 +199,7 @@ internal class ProtonVpnConnectionManagerImpl(
                 context.unbindService(serviceConnection)
                 bound = false
             }
-            setState(VpnConnectionState.Disconnected())
+            setState(VpnState.Default)
         }
     }
 
@@ -206,7 +207,7 @@ internal class ProtonVpnConnectionManagerImpl(
         ContextCompat.startForegroundService(context,ProTunVpnService.actionIntent(context, vpnAction))
     }
 
-    private fun setState(state: VpnConnectionState) {
+    private fun setState(state: VpnState) {
         _state.value = state
     }
 

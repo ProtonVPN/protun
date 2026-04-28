@@ -29,5 +29,5 @@ import android.content.Context
  */
 interface ForegroundServiceNotificationFactory {
     val notificationId: Int
-    fun buildNotification(context: Context, state: VpnConnectionState): Notification
+    fun buildNotification(context: Context, state: VpnState): Notification
 }

@@ -30,7 +30,7 @@ use crate::{
         connection::{
             Connection, InitialConnectionConfig, PeerInfo, IpAddress, StateChangedCallback, WgClientPrivateKey, WgPeerPublicKey
         },
-        state::State,
+        state::{ConnectionState, PeerConnectionWaitReason, VpnState},
         tests::dummy_protocol::{DummyProtocolPacket, DummyPvpnClient},
     },
     connection::{
@@ -61,15 +61,15 @@ impl EventCallback for TestEventCallback {
 }
 
 pub(crate) struct TestStateChangedCallback {
-    on_state_updated: mpsc::Sender<State>,
+    on_state_updated: mpsc::Sender<VpnState>,
 }
 impl TestStateChangedCallback {
-    pub(crate) fn new(on_state_updated: mpsc::Sender<State>) -> Self {
+    pub(crate) fn new(on_state_updated: mpsc::Sender<VpnState>) -> Self {
         Self { on_state_updated }
     }
 }
 impl StateChangedCallback for TestStateChangedCallback {
-    fn on_state_changed(&self, new_state: State) {
+    fn on_state_changed(&self, new_state: VpnState) {
         self.on_state_updated.send(new_state).unwrap();
     }
 }
@@ -77,7 +77,7 @@ impl StateChangedCallback for TestStateChangedCallback {
 pub(crate) struct ConnectionTestHelper {
     pub(crate) buf: Box<Vec<u8>>,
     pub(crate) tun_socket: Option<std::net::UdpSocket>,
-    pub(crate) state_updated_receiver: Receiver<State>,
+    pub(crate) state_updated_receiver: Receiver<VpnState>,
     pub(crate) connection: Connection,
     pub(crate) monotonic_clock: TestMonotonicClock,
     pub(crate) realtime_clock: TestRealtimeClock,
@@ -115,7 +115,7 @@ impl ConnectionTestHelper {
         let (handshake, client_addr) = self.recv_udp(socket).unwrap();
         assert!(matches!(handshake, DummyProtocolPacket::Handshake(_, _)));
         self.send_udp_to(socket, &client_addr, &DummyProtocolPacket::HandshakeResponse).unwrap();
-        self.expect_state(|state| matches!(state, State::Connected { .. }));
+        self.expect_state(|state| matches!(state.connection_state, ConnectionState::Connected { .. }));
         client_addr
     }
 
@@ -133,7 +133,7 @@ impl ConnectionTestHelper {
         }
     }
 
-    pub(crate) fn expect_state(&mut self, predicate: impl Fn(&State) -> bool) {
+    pub(crate) fn expect_state(&mut self, predicate: impl Fn(&VpnState) -> bool) {
         let max_wait = Duration::from_millis(100);
         let now = Instant::now();
         while now.elapsed() < max_wait {
@@ -156,7 +156,7 @@ pub(crate) fn prepare_connection_test(
 ) -> ConnectionTestHelper {
     let _ = env_logger::builder().is_test(true).try_init();
 
-    let (state_updated_sender, state_updated_receiver) = mpsc::channel::<State>();
+    let (state_updated_sender, state_updated_receiver) = mpsc::channel::<VpnState>();
     let monotonic_clock = TestMonotonicClock::new();
     let realtime_clock = TestRealtimeClock::new();
     let monotonic_clock_clone = monotonic_clock.clone();
@@ -261,4 +261,14 @@ pub(crate) fn create_tcp_peer(ip: &str, id: u8) -> (std::net::TcpListener, PeerI
         tls_ports: vec![],
         priority: 0,
     })
+}
+
+impl ConnectionState {
+
+    pub(crate) fn is_connected(&self) -> bool {
+        matches!(self, ConnectionState::Connected { .. })
+    }
+    pub(crate) fn is_waiting_for_network(&self) -> bool {
+        matches!(self, ConnectionState::Connecting { wait_reasons, .. } if wait_reasons.contains(&PeerConnectionWaitReason::WaitingForNetwork))
+    }
 }

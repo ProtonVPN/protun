@@ -16,7 +16,7 @@
 // along with ProtonVPN.  If not, see <https://www.gnu.org/licenses/>.
 
 use crate::api::connection::StateChangedCallback;
-use crate::api::state::{DisconnectReason, PeerConnectionInfo, State, WaitReason};
+use crate::api::state::{ConnectionState, DisconnectReason, PeerConnectionInfo, PeerConnectionWaitReason, VpnState};
 use crate::utils::windows::registry_editor::set_network_adapter_status_text;
 
 pub struct WindowsStateChangedCallback {
@@ -26,24 +26,23 @@ pub struct WindowsStateChangedCallback {
 impl WindowsStateChangedCallback {
     pub fn new(client_callback: Box<dyn StateChangedCallback>) -> WindowsStateChangedCallback {
         WindowsStateChangedCallback {
-            client_callback: client_callback
+            client_callback
         }
     }
 }
 
 impl StateChangedCallback for WindowsStateChangedCallback {
-    fn on_state_changed(&self, state: State) {
-        set_network_adapter_status_text(&map_status_to_text(&state));
+    fn on_state_changed(&self, state: VpnState) {
+        set_network_adapter_status_text(&map_status_to_text(&state.connection_state));
         self.client_callback.on_state_changed(state);
     }
 }
 
-fn map_status_to_text(state: &State) -> String {
-    match state {
-        State::Disconnected { error } => disconnected_to_string(error),
-        State::Connecting { peers } => connecting_to_string(peers),
-        State::WaitingForAction { reason } => waiting_to_string(reason),
-        State::Connected { peer } => connected_to_string(peer),
+fn map_status_to_text(connection_state: &ConnectionState) -> String {
+    match connection_state {
+        ConnectionState::Disconnected { error } => disconnected_to_string(error),
+        ConnectionState::Connecting { peers, wait_reasons } => connecting_to_string(peers, wait_reasons),
+        ConnectionState::Connected { peer } => connected_to_string(peer),
     }
 }
 
@@ -54,21 +53,19 @@ fn disconnected_to_string(error: &Option<DisconnectReason>) -> String {
     }
 }
 
-fn connecting_to_string(peers: &[PeerConnectionInfo]) -> String {
+fn connecting_to_string(peers: &[PeerConnectionInfo], wait_reasons: &[PeerConnectionWaitReason]) -> String {
+    let waiting_label = if wait_reasons.is_empty() {
+        ""
+    } else {
+        " (waiting...)"
+    };
     let num_peers: usize = peers.len();
     if num_peers > 1 {
-        format!("Connecting ({} peers)", num_peers)
+        format!("Connecting ({} peers){}", num_peers, waiting_label)
     } else if num_peers == 1 {
-        format!("Connecting to {}", peers[0].peer_id)
+        format!("Connecting to {}{}", peers[0].peer_id, waiting_label)
     } else {
-        "Connecting".to_string()
-    }
-}
-
-fn waiting_to_string(reason: &WaitReason) -> String {
-    match reason {
-        WaitReason::WaitingForNetwork => "Waiting for network".to_string(),
-        WaitReason::TunIoError { message: _ } => "Tun I/O error".to_string(),
+        format!("Connecting{}", waiting_label)
     }
 }
 

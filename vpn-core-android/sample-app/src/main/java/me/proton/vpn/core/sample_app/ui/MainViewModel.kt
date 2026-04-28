@@ -48,20 +48,20 @@ class MainViewModel @Inject constructor(
     val events = MutableSharedFlow<Event>(extraBufferCapacity = 1, onBufferOverflow = BufferOverflow.DROP_OLDEST)
 
     val uiState = connectionManager.state.map { state ->
-        if (state is VpnConnectionState.Loading) {
+        val connectionState = state.connectionState
+        if (connectionState is VpnConnectionState.Loading) {
             UiState.loading()
         } else {
-            val buttonType = when (state) {
+            val buttonType = when (connectionState) {
                 is VpnConnectionState.Disconnected -> ButtonType.Connect
                 else -> ButtonType.Disconnect
             }
-            val stateLabel = when (state) {
+            val stateLabel = when (connectionState) {
                 VpnConnectionState.Loading -> ""
-                is VpnConnectionState.Connected -> "Connected: ${state.connection.toDisplay()}"
-                is VpnConnectionState.Connecting -> "Connecting..."
-                is VpnConnectionState.WaitingForAction -> "Waiting for action: ${state.reason}"
-                is VpnConnectionState.Disconnected -> if (state.error != null) {
-                    "Disconnected: ${state.error}"
+                is VpnConnectionState.Connected -> "Connected: ${connectionState.connection.toDisplay()}"
+                is VpnConnectionState.Connecting -> "Connecting... ${connectionState.waitReasons}"
+                is VpnConnectionState.Disconnected -> if (connectionState.error != null) {
+                    "Disconnected: ${connectionState.error}"
                 } else {
                     "Disconnected"
                 }

@@ -25,6 +25,22 @@ import java.net.InetSocketAddress
 import java.util.Date
 
 @Parcelize
+data class VpnState(
+    val interfaceUp: Boolean,
+    val connectionState: VpnConnectionState,
+) : Parcelable {
+    companion object {
+
+        fun disconnectedWith(error: VpnDisconnectError) = VpnState(
+            interfaceUp = false,
+            connectionState = VpnConnectionState.Disconnected(error)
+        )
+
+        val Default = VpnState(interfaceUp = false, VpnConnectionState.Disconnected())
+    }
+}
+
+@Parcelize
 sealed interface VpnConnectionState : Parcelable {
 
     /**
@@ -39,29 +55,23 @@ sealed interface VpnConnectionState : Parcelable {
     ): VpnConnectionState
 
     data class Connecting(
-        val connections: List<PeerConnection>
-    ): VpnConnectionState
-
-    /**
-     * Connection attempt requires app, user or system action to proceed.
-     */
-    data class WaitingForAction(
-        val reason: VpnWaitReason
+        val connections: List<PeerConnection>,
+        val waitReasons: List<PeerConnectionWaitReason>,
     ): VpnConnectionState
 
     data class Connected(
         val connection: PeerConnection,
-        val connectedSince: Date
+        val connectedSince: Date,
     ): VpnConnectionState
 }
 
 @Parcelize
-sealed interface VpnWaitReason : Parcelable {
+sealed interface PeerConnectionWaitReason : Parcelable {
 
     /**
      * Device currently has no network (airplane mode, no signal, etc.)
      */
-    data object WaitingForNetwork : VpnWaitReason
+    data object WaitingForNetwork : PeerConnectionWaitReason
 }
 
 @Parcelize

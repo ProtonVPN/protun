@@ -32,9 +32,12 @@ import kotlinx.coroutines.flow.onEach
 import me.proton.vpn.core.api.ForegroundServiceNotificationFactory
 import me.proton.vpn.core.api.ProtonVpnConnectionManager
 import me.proton.vpn.core.api.VpnConnectionState
+import me.proton.vpn.core.api.VpnState
 
 private const val VPN_STATE_NOTIFICATION_ID = 10
 private const val CHANNEL_ID = "me.proton.vpn.core.sample_app.vpn_connection"
+private val HIDE_NOTIFICATION_STATES =
+    listOf(VpnConnectionState.Loading, VpnConnectionState.Disconnected(null))
 
 class VpnNotificationFactory(
     private val appContext: Context,
@@ -46,19 +49,21 @@ class VpnNotificationFactory(
 
     init {
         connectionManager.state.onEach { state ->
-            if (state != VpnConnectionState.Loading && !(state is VpnConnectionState.Disconnected && state.error == null)) {
+            if (state.connectionState !in HIDE_NOTIFICATION_STATES) {
                 val notification = buildNotification(appContext, state)
                 notificationManager?.notify(VPN_STATE_NOTIFICATION_ID, notification)
+            } else {
+                notificationManager?.cancel(VPN_STATE_NOTIFICATION_ID)
             }
         }.launchIn(mainScope)
     }
 
     override val notificationId: Int get() = VPN_STATE_NOTIFICATION_ID
 
-    override fun buildNotification(context: Context, state: VpnConnectionState): Notification {
+    override fun buildNotification(context: Context, state: VpnState): Notification {
         return NotificationCompat.Builder(context, CHANNEL_ID)
             .setContentTitle("ProtonVPN sample app")
-            .setContentText(state.javaClass.simpleName)
+            .setContentText(state.connectionState.javaClass.simpleName)
             .setSmallIcon(android.R.drawable.ic_lock_lock)
             .setOngoing(true)
             .build()

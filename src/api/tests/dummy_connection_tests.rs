@@ -17,17 +17,17 @@
 
 use std::{thread, time::Duration};
 
-use crate::{api::{
-    connection::{PrivateKeyUpdateInfo, WgClientPrivateKey},
-    state::{PeerConnectionInfo, Protocol, State, WaitReason},
+use crate::api::state::ConnectionState;
+use crate::api::{
+    connection::{ConnectivityEvent, PrivateKeyUpdateInfo, WgClientPrivateKey},
+    state::{PeerConnectionInfo, Protocol},
     tests::{
         dummy_protocol::DummyProtocolPacket,
         test_helpers::{
             create_tcp_peer, create_udp_peer, prepare_connection_test
         },
     },
-}};
-use crate::api::connection::ConnectivityEvent;
+};
 
 /// Set of integration tests using:
 /// - Real [Streams], [Connection] and [PvpnConnection] under test
@@ -53,13 +53,16 @@ fn happy_path_udp_connection() {
     let (handshake, client_addr) = helper.recv_udp(&udp_server_socket).unwrap();
     assert!(matches!(handshake, DummyProtocolPacket::Handshake(_, key) if key == client_private_key.to_vec()));
     helper.expect_state(|state| matches!(
-        state,
-        State::Connecting { peers } if peers == &vec![expected_peer.clone()]
+        &state.connection_state,
+        ConnectionState::Connecting { peers, wait_reasons } if peers == &vec![expected_peer.clone()] && wait_reasons.is_empty()
     ));
 
     // send handshake response to client and expect "connected" state
     helper.send_udp_to(&udp_server_socket, &client_addr, &DummyProtocolPacket::HandshakeResponse).unwrap();
-    helper.expect_state(|state| matches!(state,State::Connected { peer } if peer == &expected_peer));
+    helper.expect_state(|state| matches!(
+        &state.connection_state,
+        ConnectionState::Connected { peer } if peer == &expected_peer)
+    );
 
     // send data to TUN and receive it on server socket
     let data = DummyProtocolPacket::Data(vec![1u8]);
@@ -75,7 +78,7 @@ fn happy_path_udp_connection() {
 
     // disconnect and make sure connection thread ends
     helper.connection.disconnect_and_wait();
-    helper.expect_state(|state| matches!(state, State::Disconnected { error: None }));
+    helper.expect_state(|state| matches!(&state.connection_state, ConnectionState::Disconnected { error: None }));
 }
 
 #[test_log::test]
@@ -96,13 +99,16 @@ fn happy_path_tcp_connection() {
         port: server_addr.port()
     };
     helper.expect_state(|state| matches!(
-        state,
-        State::Connecting { peers } if peers == &vec![expected_peer.clone()]
+        &state.connection_state,
+        ConnectionState::Connecting { peers, wait_reasons } if peers == &vec![expected_peer.clone()] && wait_reasons.is_empty()
     ));
 
     // send handshake response to client and expect connected state
     helper.send_tcp(&mut tcp_server_socket, &DummyProtocolPacket::HandshakeResponse).unwrap();
-    helper.expect_state(|state| matches!(state,State::Connected { peer } if peer == &expected_peer));
+    helper.expect_state(|state| matches!(
+        &state.connection_state,
+        ConnectionState::Connected { peer } if peer == &expected_peer
+    ));
 
     // send tun data and receive it on server socket
     let data = DummyProtocolPacket::Data(vec![1u8]);
@@ -118,7 +124,7 @@ fn happy_path_tcp_connection() {
 
     // disconnect and join
     helper.connection.disconnect_and_wait();
-    helper.expect_state(|state| matches!(state, State::Disconnected { .. }));
+    helper.expect_state(|state| matches!(&state.connection_state, ConnectionState::Disconnected { .. }));
 }
 
 #[test_log::test]
@@ -142,7 +148,7 @@ fn fallback_to_another_peer() {
     let handshake = helper.recv_tcp(&mut tcp_server_socket2).unwrap();
     assert!(matches!(handshake, DummyProtocolPacket::Handshake(_, _)));
     helper.send_tcp(&mut tcp_server_socket2, &DummyProtocolPacket::HandshakeResponse).unwrap();
-    helper.expect_state(|state| matches!(state,State::Connected { .. }));
+    helper.expect_state(|state| state.connection_state.is_connected());
 
     helper.connection.disconnect_and_wait();
 }
@@ -155,7 +161,7 @@ fn connect_waiting_for_network() {
     let mut helper = prepare_connection_test(vec![udp_server_peer], client_private_key, false, true);
 
     thread::sleep(Duration::from_millis(5));
-    helper.expect_state(|state| matches!(state, State::WaitingForAction { reason: WaitReason::WaitingForNetwork }));
+    helper.expect_state(|state| state.connection_state.is_waiting_for_network());
 
     // Make network available and expect handshake from client that was initiated after network became available
     let before_network_available_ts = helper.realtime_clock.now_nanos();
@@ -163,7 +169,7 @@ fn connect_waiting_for_network() {
     let (handshake, client_addr) = helper.recv_udp(&udp_server_socket).unwrap();
     assert!(matches!(handshake, DummyProtocolPacket::Handshake(timestamp, _) if timestamp >= before_network_available_ts));
     helper.send_udp_to(&udp_server_socket, &client_addr, &DummyProtocolPacket::HandshakeResponse).unwrap();
-    helper.expect_state(|state| matches!(state, State::Connected { .. }));
+    helper.expect_state(|state| state.connection_state.is_connected());
 
     helper.connection.disconnect_and_wait();
 }
@@ -177,10 +183,7 @@ fn pause_and_resume_network_while_connected() {
     let client_addr1 = helper.accept_and_verify_udp_connection(&udp_server_socket);
 
     helper.connection.on_connectivity_change(ConnectivityEvent::Down);
-    helper.expect_state(|state| matches!(
-        state,
-        State::WaitingForAction { reason: WaitReason::WaitingForNetwork }
-    ));
+    helper.expect_state(|state| state.connection_state.is_waiting_for_network());
 
     helper.connection.on_connectivity_change(ConnectivityEvent::Up);
     let client_addr2 = helper.accept_and_verify_udp_connection(&udp_server_socket);
@@ -217,7 +220,7 @@ fn connect_without_tun() {
     let (handshake, client_addr) = helper.recv_udp(&udp_server_socket).unwrap();
     assert!(matches!(handshake, DummyProtocolPacket::Handshake(_, _)));
     helper.send_udp_to(&udp_server_socket, &client_addr, &DummyProtocolPacket::HandshakeResponse).unwrap();
-    helper.expect_state(|state| matches!(state, State::Connected { .. }));
+    helper.expect_state(|state| state.connection_state.is_connected());
 
     helper.connection.disconnect_and_wait();
 }
@@ -235,7 +238,7 @@ fn update_private_key_while_connected() {
     let (handshake, new_client_addr) = helper.recv_udp(&udp_server_socket).unwrap();
     assert!(matches!(handshake, DummyProtocolPacket::Handshake(_, key) if key == new_client_private_key.to_vec()));
     helper.send_udp_to(&udp_server_socket, &new_client_addr, &DummyProtocolPacket::HandshakeResponse).unwrap();
-    helper.expect_state(|state| matches!(state, State::Connected { .. }));
+    helper.expect_state(|state| state.connection_state.is_connected());
     assert_ne!(client_addr, new_client_addr);
 
     helper.connection.disconnect_and_wait();

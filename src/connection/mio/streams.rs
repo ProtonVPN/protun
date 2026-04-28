@@ -19,6 +19,7 @@ use std::{io, net::SocketAddr};
 use crate::connection::{streams::{PollResult, PollWaker, Stream, Streams}, CreateTunStream};
 use mio::{event, Events, Poll, Token, Waker};
 use pvpnclient::{Deadline, StreamId};
+use crate::api::state::InterfaceState;
 
 const POLL_WAKER_TOKEN: Token = Token(0);
 const EVENTS_CAPACITY: usize = 512; // Safe value for max number of simultaneous streams
@@ -151,18 +152,28 @@ impl Streams for MioStreams {
         }
     }
 
-    fn update_tun(&mut self, create_tun_stream: CreateTunStream) {
+    fn update_tun(&mut self, create_tun_stream: CreateTunStream) -> io::Result<()> {
         self.close_stream(StreamId::TUN_STREAM_ID);
         let tun = create_tun_stream();
         if let Some(tun) = tun {
-            self.register_stream(StreamId::TUN_STREAM_ID, tun, mio::Interest::READABLE)
-                .expect("failed to register tun stream");
+            self.register_stream(StreamId::TUN_STREAM_ID, tun, mio::Interest::READABLE)?
+        }
+        Ok(())
+    }
+
+    fn get_tun_interface_state(&self) -> InterfaceState {
+        InterfaceState {
+            is_up: get_stream_by_id(&self.streams, StreamId::TUN_STREAM_ID).is_some()
         }
     }
 }
 
 fn get_stream_by_id_mut(streams: &mut Vec<MioStreamInfo>, stream_id: StreamId) -> Option<&mut MioStreamInfo> {
     streams.iter_mut().find(|s| s.stream_id == stream_id)
+}
+
+fn get_stream_by_id(streams: &Vec<MioStreamInfo>, stream_id: StreamId) -> Option<&MioStreamInfo> {
+    streams.iter().find(|s| s.stream_id == stream_id)
 }
 
 fn get_stream_by_token(streams: &Vec<MioStreamInfo>, token: Token) -> Option<&MioStreamInfo> {

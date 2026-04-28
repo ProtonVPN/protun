@@ -20,7 +20,7 @@ use std::sync::Mutex;
 use crate::api::events::Event;
 use crate::connection::pvpn_connection::{start_pvpn_connection, PvpnDependencies, PvpnMessage, SendPvpnMessage};
 use crate::connection::streams::PollWaker;
-use crate::api::state::State;
+use crate::api::state::VpnState;
 
 pub const CLIENT_PRIV_KEY_SIZE_BYTES: usize = 32;
 pub const PEER_PUB_KEY_SIZE_BYTES: usize = 32;
@@ -152,15 +152,15 @@ pub struct PrivateKeyUpdateInfo {
 /// callback to avoid blocking the connection thread.
 #[cfg_attr(feature = "uniffi", uniffi::export(callback_interface))]
 pub trait StateChangedCallback: Send + Sync {
-    fn on_state_changed(&self, state: State);
+    fn on_state_changed(&self, state: VpnState);
 }
 
 /// Blanket implementation to allow using closures as state change callbacks.
 impl<F> StateChangedCallback for F
 where
-    F: Send + Sync + Fn(State) + 'static
+    F: Send + Sync + Fn(VpnState) + 'static
 {
-    fn on_state_changed(&self, state: State) {
+    fn on_state_changed(&self, state: VpnState) {
         self(state);
     }
 }
@@ -187,7 +187,7 @@ where
 #[derive(Clone, Debug)]
 pub struct PeerInfo {
     /// Unique identifier of connected peer (as defined by client). This id will be available in
-    /// connection states when given peer is connecting/connected (see peer_id in [State]).
+    /// connection states when given peer is connecting/connected (see peer_id in [VpnState]).
     pub peer_id: String,
     pub server_ip: IpAddress,
     pub server_public_key: WgPeerPublicKey,

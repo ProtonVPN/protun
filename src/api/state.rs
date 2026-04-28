@@ -15,10 +15,25 @@
 // You should have received a copy of the GNU General Public License
 // along with ProtonVPN.  If not, see <https://www.gnu.org/licenses/>.
 
+/// Combined state of the VPN connection and the TUN interface.
+#[cfg_attr(feature = "uniffi", derive(uniffi::Record))]
+#[derive(Clone, Debug, PartialEq)]
+pub struct VpnState {
+    pub interface_state: InterfaceState,
+    pub connection_state: ConnectionState,
+}
+
+/// State of the TUN interface.
+#[cfg_attr(feature = "uniffi", derive(uniffi::Record))]
+#[derive(Clone, Debug, PartialEq)]
+pub struct InterfaceState {
+    pub is_up: bool,
+}
+
 /// State of the VPN connection.
 #[cfg_attr(feature = "uniffi", derive(uniffi::Enum))]
 #[derive(Clone, Debug, PartialEq)]
-pub enum State {
+pub enum ConnectionState {
 
     /// Disconnected. [error] will be set if disconnection happened due to an error.
     Disconnected {
@@ -28,11 +43,7 @@ pub enum State {
     /// Library is attempting VPN connection to one or more candidate peers.
     Connecting {
         peers: Vec<PeerConnectionInfo>,
-    },
-
-    /// Library connection attempt requires app, user or system action to proceed.
-    WaitingForAction {
-        reason: WaitReason
+        wait_reasons: Vec<PeerConnectionWaitReason>,
     },
 
     /// Connection to [peer] is established.
@@ -41,9 +52,18 @@ pub enum State {
     },
 }
 
+#[cfg_attr(feature = "uniffi", derive(uniffi::Record))]
+#[derive(PartialEq, Clone, Debug)]
+pub struct PeerConnectionInfo {
+    pub peer_id: String,
+    pub entry_ip: String,
+    pub protocol: Protocol,
+    pub port: u16,
+}
+
 #[cfg_attr(feature = "uniffi", derive(uniffi::Enum))]
 #[derive(Clone, Debug, PartialEq)]
-pub enum WaitReason {
+pub enum PeerConnectionWaitReason {
 
     /// Device currently has no network (airplane mode, no signal, etc.)
     WaitingForNetwork,
@@ -59,15 +79,6 @@ pub enum DisconnectReason {
 
     /// There was a problem establishing TUN interface.
     TunEstablishError { message: String },
-}
-
-#[cfg_attr(feature = "uniffi", derive(uniffi::Record))]
-#[derive(PartialEq, Clone, Debug)]
-pub struct PeerConnectionInfo {
-    pub peer_id: String,
-    pub entry_ip: String,
-    pub protocol: Protocol,
-    pub port: u16,
 }
 
 #[cfg_attr(feature = "uniffi", derive(uniffi::Enum))]
