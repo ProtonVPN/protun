@@ -29,7 +29,7 @@ use crate::connection::CreateTunStream;
 
 use crate::{
     api::{
-        connection::{InitialConnectionConfig, PeerInfo, WgClientPrivateKey},
+        connection::{InitialConnectionConfig, PeerInfo},
         state::{PeerConnectionInfo, Protocol},
     },
     connection::{pvpn_client::PvpnClient, streams::{PendingWrite, PollResult, PollWaker, StreamResult, Streams, WouldBlock}},
@@ -52,11 +52,10 @@ pub(crate) struct PvpnDependencies {
 pub(crate) enum PvpnMessage {
     /// Disconnect the stop the connection loop.
     Disconnect,
-    SetPeers(Vec<PeerInfo>),
+    UpdatePeers(Vec<PeerInfo>),
     ConnectivityChange(ConnectivityEvent),
     #[cfg(feature = "mio")]
     UpdateTun(CreateTunStream),
-    UpdateWgPrivateKey(WgClientPrivateKey),
     StartPacketCapture(PcapFileInfo),
     StopPacketCapture,
     RequestStats,
@@ -85,7 +84,6 @@ pub(crate) fn start_pvpn_connection(
                     message_receiver,
                     deps.config.network_available,
                     deps.config.peers,
-                    deps.config.wg_private_key,
                     deps.config.pcap_file,
                 );
                 connection.run();
@@ -127,7 +125,6 @@ impl PvpnConnection {
         message_receiver: mpsc::Receiver<PvpnMessage>,
         network_available: bool,
         peers: Vec<PeerInfo>,
-        wg_private_key: WgClientPrivateKey,
         pcap_file_info: Option<PcapFileInfo>,
     ) -> Self {
         let mut ret = Self {
@@ -144,7 +141,6 @@ impl PvpnConnection {
             network_recovery_handler: NetworkRecoveryHandler::new(network_available),
             pcap_stream: None,
         };
-        ret.client.set_private_key(&wg_private_key.into());
         ret.activate_peers();
         if !ret.network_recovery_handler.is_network_available() {
             ret.client.notify_network_down();
@@ -200,8 +196,8 @@ impl PvpnConnection {
                     self.should_stop = true;
                     break;
                 },
-                PvpnMessage::SetPeers(peers) => {
-                    self.set_peers(peers);
+                PvpnMessage::UpdatePeers(peers) => {
+                    self.update_peers(peers);
                 },
                 PvpnMessage::ConnectivityChange(event) => {
                     let tunnel_info = self.client.get_tunnel_info();
@@ -212,9 +208,6 @@ impl PvpnConnection {
                     if let Err(e) = self.streams.update_tun(create_tun_stream) {
                         log::error!("failed to update tun: {:?}", e);
                     }
-                },
-                PvpnMessage::UpdateWgPrivateKey(wg_private_key) => {
-                    self.client.set_private_key(&wg_private_key.into());
                 },
                 PvpnMessage::StartPacketCapture(file_info) => {
                     self.start_packet_capture(file_info);
@@ -475,7 +468,7 @@ impl PvpnConnection {
         }
     }
 
-    fn set_peers(&mut self, new_peers: Vec<PeerInfo>) {
+    fn update_peers(&mut self, new_peers: Vec<PeerInfo>) {
         for peer in &self.peers {
             self.client.peer_remove(peer.addr());
         }

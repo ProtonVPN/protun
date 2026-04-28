@@ -46,7 +46,6 @@ import uniffi.protun.ConnectivityEvent
 import uniffi.protun.EventCallback
 import uniffi.protun.InitialConnectionConfig
 import uniffi.protun.LogLevel
-import uniffi.protun.PrivateKeyUpdateInfo
 import uniffi.protun.StateChangedCallback
 import java.lang.ref.WeakReference
 import java.util.Date
@@ -167,12 +166,6 @@ internal class ConnectionManager(
 
     fun updatePeers(peers: List<Peer>) {
         activeConnection?.connection?.updatePeers(peers.toUniFFI())
-    }
-
-    fun updateClientPrivateKey(clientED25519PrivateKeyPem: String) {
-        activeConnection?.connection?.updateWgPrivateKey(
-            PrivateKeyUpdateInfo(clientED25519PrivateKeyPem.decodeBase64())
-        )
     }
 
     fun setPacketCaptureEnabled(packetCaptureInfo: PacketCaptureInfo?) {

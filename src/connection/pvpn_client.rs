@@ -16,13 +16,13 @@
 // along with ProtonVPN.  If not, see <https://www.gnu.org/licenses/>.
 
 use std::io::ErrorKind;
-use pvpnclient::os_interface::rand::{Seed256};
 use pvpnclient::os_interface::time::{Instant, InstantFactory, SystemTime, SystemTimeFactory};
 use pvpnclient::vpn::{WireguardPrivateKey};
 use pvpnclient::{Deadline, TunnelInfo};
 use pvpnclient::Client;
 use pvpnclient::{Action, PvpnReturn, StreamId, Task};
 use pvpnclient::id::CaptureId;
+use pvpnclient::os_interface::rand::Seed256;
 use pvpnclient::peer::{Peer, PeerAddr};
 use pvpnclient::stats::TunnelStats;
 use crate::connection::time::{ClientMonotonicFactory, ClientRealtimeFactory};
@@ -30,7 +30,6 @@ use crate::connection::util::{error_kind_to_socket_err};
 
 /// Abstraction over [pvpnclient::pvpnclient::Client]
 pub trait PvpnClient {
-    fn set_private_key(&mut self, private_key: &WireguardPrivateKey);
     fn set_current_time(&mut self) -> (Instant, SystemTime);
     fn need_pull(&self) -> bool;
     fn peer_add(&mut self, peer: Peer);
@@ -58,14 +57,19 @@ impl <'a> PvpnClientImpl<'a> {
     pub(crate) fn new(
         monotonic_factory: ClientMonotonicFactory,
         realtime_factory: ClientRealtimeFactory,
+        wg_private_key: WireguardPrivateKey,
         seed: fn() -> Seed256
     ) -> Self {
+        let client = Client::builder::<ClientRealtimeFactory, ClientMonotonicFactory>(
+            seed(),
+            monotonic_factory.now(),
+            realtime_factory.now()
+        )
+            .no_local_agent()
+            .with_wg_private_key(wg_private_key)
+            .build();
         PvpnClientImpl {
-            c: Client::new::<ClientRealtimeFactory, ClientMonotonicFactory>(
-                monotonic_factory.now(),
-                realtime_factory.now(),
-                seed()
-            ),
+            c: client,
             need_pull: true,
             wakeup_deadline: None,
             monotonic_factory,
@@ -79,10 +83,6 @@ impl <'a> PvpnClientImpl<'a> {
     }
 }
 impl <'a> PvpnClient for PvpnClientImpl<'a> {
-    fn set_private_key(&mut self, private_key: &WireguardPrivateKey) {
-        let result = &self.c.set_wg_private_key(private_key);
-        self.handle_result(result);
-    }
 
     fn set_current_time(&mut self) -> (Instant, SystemTime) {
         let monotonic_now = self.monotonic_factory.now();
@@ -136,7 +136,7 @@ impl <'a> PvpnClient for PvpnClientImpl<'a> {
         // no-op in real impl, libpvpnclient will find it out based on socket errors,
         // needed for testing
     }
-    
+
     fn get_tunnel_info(&mut self) -> Option<TunnelInfo> {
         let tunnel_info = self.c.tunnel_info();
         self.handle_result(&tunnel_info);

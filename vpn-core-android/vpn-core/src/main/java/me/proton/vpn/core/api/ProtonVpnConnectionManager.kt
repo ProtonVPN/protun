@@ -65,7 +65,6 @@ interface ProtonVpnConnectionManager {
     fun connect(config: InitialConfig)
     fun updateInterfaceConfig(interfaceConfig: InterfaceConfig)
     fun updatePeers(peers: List<Peer>)
-    fun updateClientPrivateKey(clientED25519PrivateKeyBase64: String)
 
     /**
      * Enable or disable packet capture of VPN traffic. When enabled, VPN traffic will be logged

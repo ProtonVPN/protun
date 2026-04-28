@@ -203,6 +203,7 @@ fn create_pvpn_dependencies(
         PvpnClientImpl::new(
             ClientMonotonicFactory::new(),
             ClientRealtimeFactory::new(),
+            config.wg_private_key.clone().into(),
             || CryptoSeedProvider::new(rand::rng()).into()
         )
     );

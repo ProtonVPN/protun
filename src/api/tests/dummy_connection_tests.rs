@@ -19,7 +19,7 @@ use std::{thread, time::Duration};
 
 use crate::api::state::ConnectionState;
 use crate::api::{
-    connection::{ConnectivityEvent, PrivateKeyUpdateInfo, WgClientPrivateKey},
+    connection::ConnectivityEvent,
     state::{PeerConnectionInfo, Protocol},
     tests::{
         dummy_protocol::DummyProtocolPacket,
@@ -221,25 +221,6 @@ fn connect_without_tun() {
     assert!(matches!(handshake, DummyProtocolPacket::Handshake(_, _)));
     helper.send_udp_to(&udp_server_socket, &client_addr, &DummyProtocolPacket::HandshakeResponse).unwrap();
     helper.expect_state(|state| state.connection_state.is_connected());
-
-    helper.connection.disconnect_and_wait();
-}
-
-#[test_log::test]
-fn update_private_key_while_connected() {
-    let client_private_key = [1; 32];
-    let (udp_server_socket, udp_server_peer) = create_udp_peer(1);
-    let mut helper = prepare_connection_test(vec![udp_server_peer], client_private_key, true, true);
-
-    let client_addr = helper.accept_and_verify_udp_connection(&udp_server_socket);
-
-    let new_client_private_key = [2; 32];
-    helper.connection.update_wg_private_key(PrivateKeyUpdateInfo { wg_private_key: WgClientPrivateKey(new_client_private_key) });
-    let (handshake, new_client_addr) = helper.recv_udp(&udp_server_socket).unwrap();
-    assert!(matches!(handshake, DummyProtocolPacket::Handshake(_, key) if key == new_client_private_key.to_vec()));
-    helper.send_udp_to(&udp_server_socket, &new_client_addr, &DummyProtocolPacket::HandshakeResponse).unwrap();
-    helper.expect_state(|state| state.connection_state.is_connected());
-    assert_ne!(client_addr, new_client_addr);
 
     helper.connection.disconnect_and_wait();
 }

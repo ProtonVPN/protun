@@ -147,9 +147,6 @@ internal class ProTunVpnService : VpnService() {
                                 is VpnAction.Update.Peers ->
                                     manager.updatePeers(vpnAction.peers)
 
-                                is VpnAction.Update.ClientPrivateKey ->
-                                    manager.updateClientPrivateKey(vpnAction.clientED25519PrivateKeyPem)
-
                                 is VpnAction.Update.PacketCapture ->
                                     manager.setPacketCaptureEnabled(vpnAction.packetCaptureInfo)
 
@@ -211,7 +208,6 @@ internal class ProTunVpnService : VpnService() {
         sealed interface Update : VpnAction {
             @Parcelize data class Interface(val interfaceConfig: InterfaceConfig) : Update
             @Parcelize data class Peers(val peers: List<Peer>) : Update
-            @Parcelize data class ClientPrivateKey(val clientED25519PrivateKeyPem: String) : Update
             @Parcelize data class PacketCapture(val packetCaptureInfo: PacketCaptureInfo?) : Update
             @Parcelize data object RequestConnectionStats : Update
         }

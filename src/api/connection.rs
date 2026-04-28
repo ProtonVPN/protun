@@ -72,13 +72,7 @@ impl Connection {
     /// Method call might not necessarily result in new connection if suitable peer is already connected.
     #[cfg_attr(feature = "uniffi", uniffi::method)]
     pub fn update_peers(&self, peers: Vec<PeerInfo>) {
-        (self.send_pvpn_message)(PvpnMessage::SetPeers(peers));
-    }
-
-    /// Updates WireGuard private key.
-    #[cfg_attr(feature = "uniffi", uniffi::method)]
-    pub fn update_wg_private_key(&self, info: PrivateKeyUpdateInfo) {
-        (self.send_pvpn_message)(PvpnMessage::UpdateWgPrivateKey(info.wg_private_key.into()));
+        (self.send_pvpn_message)(PvpnMessage::UpdatePeers(peers));
     }
 
     /// Call it when connectivity or underlying network adapter(s) change
@@ -141,11 +135,6 @@ pub enum ConnectivityEvent {
     /// Network switch occurred (wifi -> mobile, between different wifi etc.).
     /// This informs the library that it should reset VPN sockets.
     NetworkSwitch,
-}
-
-#[cfg_attr(feature = "uniffi", derive(uniffi::Record))]
-pub struct PrivateKeyUpdateInfo {
-    pub wg_private_key: WgClientPrivateKey,
 }
 
 /// Callback interface for receiving connection state changes. Avoid doing heavy work in the

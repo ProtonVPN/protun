@@ -75,7 +75,7 @@ pub(crate) enum ConnectionState {
 }
 
 pub(crate) struct DummyPvpnClient {
-    private_key: Option<WireguardPrivateKey>,
+    private_key: WireguardPrivateKey,
     monotonic_clock: TestMonotonicClock,
     realtime_clock: TestRealtimeClock,
     peers: Vec<Peer>,
@@ -86,9 +86,13 @@ pub(crate) struct DummyPvpnClient {
     failed_connections: Vec<ConnectionInfo>,
 }
 impl DummyPvpnClient {
-    pub(crate) fn new(monotonic_clock: TestMonotonicClock, realtime_clock: TestRealtimeClock) -> Self {
+    pub(crate) fn new(
+        private_key: WireguardPrivateKey,
+        monotonic_clock: TestMonotonicClock,
+        realtime_clock: TestRealtimeClock,
+    ) -> Self {
         Self {
-            private_key: None,
+            private_key,
             monotonic_clock,
             realtime_clock,
             peers: Vec::new(),
@@ -124,7 +128,7 @@ impl DummyPvpnClient {
                         self.actions.push_back(Action::mock_open(stream_id, OpenStream::mock_open_udp(socket_addr)));
                         let handshake = &DummyProtocolPacket::Handshake(
                             self.realtime_clock.now_nanos(),
-                            self.private_key.as_ref().unwrap().key.to_vec()
+                            self.private_key.key.to_vec()
                         );
                         self.actions.push_back(Action::mock_write(stream_id, DummyProtocolPacket::serialize(handshake)));
                     }
@@ -175,11 +179,7 @@ impl DummyPvpnClient {
     }
 }
 impl PvpnClient for DummyPvpnClient {
-    fn set_private_key(&mut self, private_key: &WireguardPrivateKey) {
-        self.private_key = Some(private_key.clone());
-        self.reset_current_connection();
-    }
-    
+
     fn set_current_time(&mut self) -> (Instant, SystemTime) {
         let real_time =
             std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap();
@@ -255,7 +255,7 @@ impl PvpnClient for DummyPvpnClient {
                         self.connection_state = ConnectionState::WaitingForHandshake;
                         let handshake = DummyProtocolPacket::serialize(&DummyProtocolPacket::Handshake(
                             self.realtime_clock.now_nanos(),
-                            self.private_key.as_ref().unwrap().key.to_vec(),
+                            self.private_key.key.to_vec(),
                         ));
                         self.actions.push_back(Action::mock_write(peer_stream_id.clone(), handshake));
                     }

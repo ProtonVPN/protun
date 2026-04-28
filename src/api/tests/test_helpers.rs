@@ -201,7 +201,11 @@ pub(crate) fn prepare_connection_test(
             let streams =
                 Box::new(MioStreams::new(tun_stream, socket_factory, poll).expect("Failed to create mio streams"));
 
-            let client = Box::new(DummyPvpnClient::new(monotonic_clock_clone, realtime_clock_clone));
+            let client = Box::new(DummyPvpnClient::new(
+                config.wg_private_key.clone().into(),
+                monotonic_clock_clone,
+                realtime_clock_clone,
+            ));
 
             let state_change_callback = Box::new(TestStateChangedCallback::new(state_updated_sender));
             let event_callback = Box::new(TestEventCallback::new());

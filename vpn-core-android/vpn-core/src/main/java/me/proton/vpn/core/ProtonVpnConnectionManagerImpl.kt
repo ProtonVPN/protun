@@ -174,12 +174,6 @@ internal class ProtonVpnConnectionManagerImpl(
         }
     }
 
-    override fun updateClientPrivateKey(clientED25519PrivateKeyBase64: String) {
-        mainScope.launch {
-            sendAction(ProTunVpnService.VpnAction.Update.ClientPrivateKey(clientED25519PrivateKeyBase64))
-        }
-    }
-
     override fun setPacketCaptureEnabled(packetCaptureInfo: PacketCaptureInfo?) {
         mainScope.launch {
             sendAction(ProTunVpnService.VpnAction.Update.PacketCapture(packetCaptureInfo))

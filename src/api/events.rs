@@ -30,7 +30,7 @@ pub enum Event {
         estimated_loss: f32,
         estimated_round_trip_time: Duration,
     },
-    
+
     PacketCaptureStarted { info: PcapFileInfo },
     PacketCaptureStopped { reason: CaptureStopReason },
 }
