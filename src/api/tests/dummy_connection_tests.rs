@@ -16,7 +16,6 @@
 // along with ProtonVPN.  If not, see <https://www.gnu.org/licenses/>.
 
 use std::{thread, time::Duration};
-
 use crate::api::state::ConnectionState;
 use crate::api::{
     connection::ConnectivityEvent,
@@ -213,7 +212,6 @@ fn update_peer_while_connected() {
 
 #[test_log::test]
 fn connect_without_tun() {
-    // Create client without network connectivity
     let client_private_key = [1; 32];
     let (udp_server_socket, udp_server_peer) = create_udp_peer(1);
     let mut helper = prepare_connection_test(vec![udp_server_peer], client_private_key, true, false);
@@ -221,8 +219,7 @@ fn connect_without_tun() {
     let (handshake, client_addr) = helper.recv_udp(&udp_server_socket).unwrap();
     assert!(matches!(handshake, DummyProtocolPacket::Handshake(_, _)));
     helper.send_udp_to(&udp_server_socket, &client_addr, &DummyProtocolPacket::HandshakeResponse).unwrap();
-    helper.expect_state(|state| state.connection_state.is_connected());
+    helper.expect_state(|state| !state.interface_state.is_up && state.connection_state.is_connected());
 
     helper.connection.disconnect_and_wait();
 }
-

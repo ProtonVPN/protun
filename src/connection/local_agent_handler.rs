@@ -141,8 +141,8 @@ impl LocalAgentHandler {
             LocalAgentValue::InfoGroups(value) =>
                 self.agent_info.groups = value.map(|v| v.0).unwrap_or_default(),
 
-            LocalAgentValue::Infos(value) => {} // individual infos are handled
-            LocalAgentValue::Settings(value) => {} // individual settings are handled
+            LocalAgentValue::Infos(_) => {} // individual infos are handled
+            LocalAgentValue::Settings(_) => {} // individual settings are handled
             LocalAgentValue::Stats(value) =>
                 if let Some(stats) = value {
                     return Some(stats.into())

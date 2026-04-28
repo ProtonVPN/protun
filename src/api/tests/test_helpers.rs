@@ -21,9 +21,10 @@ use std::{
     }, time::Duration
 };
 use std::collections::HashMap;
-use std::sync::{Mutex, RwLock};
+use std::sync::RwLock;
 use std::time::Instant;
 use mio::net::UdpSocket;
+use pvpnclient::LocalAgentMessage;
 use rand::Rng;
 
 use crate::{
@@ -47,17 +48,22 @@ use crate::api::events::Event;
 use crate::connection::pvpn_connection::PvpnDependencies;
 use super::test_clocks::{TestMonotonicClock, TestRealtimeClock};
 
+#[cfg(feature = "local-agent")]
+use crate::api::local_agent::LocalAgentSettings;
+#[cfg(feature = "local-agent")]
+use crate::api::tests::dummy_protocol::DummyLocalAgentScript;
+
 pub(crate) struct TestEventCallback {
-    captured_events: Mutex<Vec<Event>>
+    sender: mpsc::Sender<Event>,
 }
 impl TestEventCallback {
-    fn new() -> Self {
-        Self { captured_events: Mutex::new(vec![]) }
+    fn new(sender: mpsc::Sender<Event>) -> Self {
+        Self { sender }
     }
 }
 impl EventCallback for TestEventCallback {
     fn on_event(&self, event: Event) {
-        self.captured_events.lock().unwrap().push(event);
+        let _ = self.sender.send(event);
     }
 }
 
@@ -75,11 +81,11 @@ impl StateChangedCallback for TestStateChangedCallback {
     }
 }
 
-struct InMemoryCache {
+pub(crate) struct InMemoryCache {
     cache: RwLock<HashMap<CacheKey, Vec<u8>>>
 }
 impl InMemoryCache {
-    fn new() -> Self {
+    pub(crate) fn new() -> Self {
         Self { cache: RwLock::new(HashMap::new()) }
     }
 }
@@ -102,6 +108,7 @@ pub(crate) struct ConnectionTestHelper {
     pub(crate) buf: Box<Vec<u8>>,
     pub(crate) tun_socket: Option<std::net::UdpSocket>,
     pub(crate) state_updated_receiver: Receiver<VpnState>,
+    pub(crate) event_receiver: Receiver<Event>,
     pub(crate) connection: Connection,
     pub(crate) monotonic_clock: TestMonotonicClock,
     pub(crate) realtime_clock: TestRealtimeClock,
@@ -170,6 +177,20 @@ impl ConnectionTestHelper {
         }
         panic!("timed out waiting for expected state");
     }
+
+    pub(crate) fn expect_event(&mut self, predicate: impl Fn(&Event) -> bool) -> Event {
+        let max_wait = Duration::from_millis(10);
+        let now = Instant::now();
+        while now.elapsed() < max_wait {
+            let left = max_wait - now.elapsed();
+            if let Ok(event) = self.event_receiver.recv_timeout(left) {
+                if predicate(&event) {
+                    return event;
+                }
+            }
+        }
+        panic!("timed out waiting for expected event");
+    }
 }
 
 pub(crate) fn prepare_connection_test(
@@ -181,6 +202,7 @@ pub(crate) fn prepare_connection_test(
     let _ = env_logger::builder().is_test(true).try_init();
 
     let (state_updated_sender, state_updated_receiver) = mpsc::channel::<VpnState>();
+    let (event_sender, event_receiver) = mpsc::channel::<Event>();
     let monotonic_clock = TestMonotonicClock::new();
     let realtime_clock = TestRealtimeClock::new();
     let monotonic_clock_clone = monotonic_clock.clone();
@@ -230,13 +252,15 @@ pub(crate) fn prepare_connection_test(
                 Box::new(MioStreams::new(tun_stream, socket_factory, poll).expect("Failed to create mio streams"));
 
             let client = Box::new(DummyPvpnClient::new(
-                WgClientPrivateKey(private_key).into(),
+                config.connection_mode.to_pvpn_client_mode(&cache).unwrap(),
                 monotonic_clock_clone,
                 realtime_clock_clone,
+                #[cfg(feature = "local-agent")]
+                DummyLocalAgentScript::new_empty()
             ));
 
             let state_change_callback = Box::new(TestStateChangedCallback::new(state_updated_sender));
-            let event_callback = Box::new(TestEventCallback::new());
+            let event_callback = Box::new(TestEventCallback::new(event_sender));
 
             Ok(PvpnDependencies {
                 config,
@@ -253,6 +277,7 @@ pub(crate) fn prepare_connection_test(
         buf: Box::new(vec![0u8; 4096]),
         tun_socket,
         state_updated_receiver,
+        event_receiver,
         connection,
         monotonic_clock,
         realtime_clock,
@@ -307,5 +332,117 @@ impl ConnectionState {
     }
     pub(crate) fn is_waiting_for_network(&self) -> bool {
         matches!(self, ConnectionState::Connecting { wait_reasons, .. } if wait_reasons.contains(&PeerConnectionWaitReason::WaitingForNetwork))
+    }
+    #[cfg(feature = "local-agent")]
+    pub(crate) fn is_connecting_to_local_agent(&self) -> bool {
+        matches!(self, ConnectionState::ConnectingToLocalAgent { .. })
+    }
+}
+
+#[cfg(feature = "local-agent")]
+pub(crate) struct LocalAgentTestHandles {
+    pub(crate) helper: ConnectionTestHelper,
+    pub(crate) script: DummyLocalAgentScript,
+}
+
+/// Variant of [prepare_connection_test] that runs in [ConnectionMode::LocalAgent] mode.
+/// Returns a [DummyLocalAgentScript] that the test uses to inject [LocalAgentMessage]s and to
+/// observe [LocalAgentAction]s pushed by the connection loop.
+#[cfg(feature = "local-agent")]
+pub(crate) fn prepare_local_agent_connection_test(
+    peers: Vec<PeerInfo>,
+    network_available: bool,
+    create_tun: bool,
+    settings: LocalAgentSettings,
+    all_messages: HashMap<String, LocalAgentMessage>,
+) -> LocalAgentTestHandles {
+    let _ = env_logger::builder().is_test(true).try_init();
+
+    let (state_updated_sender, state_updated_receiver) = mpsc::channel::<VpnState>();
+    let (event_sender, event_receiver) = mpsc::channel::<Event>();
+    let monotonic_clock = TestMonotonicClock::new();
+    let realtime_clock = TestRealtimeClock::new();
+    let monotonic_clock_clone = monotonic_clock.clone();
+    let realtime_clock_clone = realtime_clock.clone();
+    let script = DummyLocalAgentScript::new(all_messages);
+    let script_clone = script.clone();
+
+    let client_tun_socket_addr = SocketAddr::from((
+        Ipv4Addr::LOCALHOST,
+        rand::rng().random_range(10000..65535),
+    ));
+
+    let tun_socket = if create_tun {
+        let tun_socket = std::net::UdpSocket::bind(SocketAddr::from_str("0.0.0.0:0").unwrap()).unwrap();
+        tun_socket.connect(client_tun_socket_addr).unwrap();
+        Some(tun_socket)
+    } else {
+        None
+    };
+    let tun_socket_addr = tun_socket.as_ref().map(|s| s.local_addr().unwrap());
+
+    let socket_factory = Box::new(SocketFactoryUnix::new(None));
+    let (poll, waker) =
+        MioStreams::create_mio_poll_with_waker().expect("Failed to create mio poll");
+
+    let connection = Connection::connect_internal(
+        Box::new(waker),
+        move || {
+            let tun_stream = if let Some(tun_socket_addr) = tun_socket_addr {
+                Some(create_udp_tun_stream(client_tun_socket_addr, tun_socket_addr).unwrap())
+            } else {
+                None
+            };
+
+            let cache: Box<dyn PersistentCache> = Box::new(InMemoryCache::new());
+
+            let config = InitialConnectionConfig {
+                peers,
+                network_available,
+                pcap_file: None,
+                connection_mode: ConnectionMode::LocalAgent {
+                    user_agent: "protun-test".to_string(),
+                    app_version: "android-vpn@0.0.0".to_string(),
+                    settings,
+                },
+            };
+
+            let streams =
+                Box::new(MioStreams::new(tun_stream, socket_factory, poll).expect("Failed to create mio streams"));
+
+            let client = Box::new(
+                DummyPvpnClient::new(
+                    config.connection_mode.to_pvpn_client_mode(&cache).unwrap(),
+                    monotonic_clock_clone,
+                    realtime_clock_clone,
+                    script_clone
+                )
+            );
+
+            let state_change_callback = Box::new(TestStateChangedCallback::new(state_updated_sender));
+            let event_callback = Box::new(TestEventCallback::new(event_sender));
+
+            Ok(PvpnDependencies {
+                config,
+                streams,
+                client,
+                state_change_callback,
+                event_callback,
+                cache,
+            })
+        },
+    );
+
+    LocalAgentTestHandles {
+        helper: ConnectionTestHelper {
+            buf: Box::new(vec![0u8; 4096]),
+            tun_socket,
+            state_updated_receiver,
+            event_receiver,
+            connection,
+            monotonic_clock,
+            realtime_clock,
+        },
+        script,
     }
 }

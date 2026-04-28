@@ -25,3 +25,7 @@ mod test_clocks;
 
 #[cfg(feature = "mio")]
 mod dummy_connection_tests;
+
+#[cfg(feature = "mio")]
+#[cfg(feature = "local-agent")]
+mod dummy_local_agent_tests;

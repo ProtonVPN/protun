@@ -189,8 +189,6 @@ fn on_stream_error_ignored_when_network_unavailable() {
 #[test]
 fn exponential_backoff() {
     let mut handler = new_handler();
-    let stream_id = StreamId::from(1);
-    let error = network_error();
 
     // First error: 1 second backoff
     handler.on_stream_error(StreamId::from(1), &network_error(), instant(0));
