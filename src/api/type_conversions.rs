@@ -15,12 +15,13 @@
 // You should have received a copy of the GNU General Public License
 // along with ProtonVPN.  If not, see <https://www.gnu.org/licenses/>.
 
-use std::{net::IpAddr, str::FromStr};
+use std::{io, net::IpAddr, str::FromStr};
 
 use pvpnclient::{stats::TunnelStats, vpn::{WireguardPrivateKey, WireguardPublicKey}};
 
-use crate::api::connection::{CLIENT_PRIV_KEY_SIZE_BYTES, IpAddress, PEER_PUB_KEY_SIZE_BYTES, WgClientPrivateKey, WgPeerPublicKey};
+use crate::api::connection::{CLIENT_PRIV_KEY_SIZE_BYTES, IpAddress, PEER_PUB_KEY_SIZE_BYTES, WgClientPrivateKey, WgPeerPublicKey, ConnectionMode};
 use crate::api::events::Event;
+use crate::connection::pvpn_client::PvpnClientMode;
 
 #[cfg(feature = "uniffi")]
 uniffi::custom_type!(WgClientPrivateKey, Vec<u8>);
@@ -105,6 +106,17 @@ impl From<TunnelStats> for Event {
             time_since_last_handshake: value.time_since_last_handshake,
             estimated_loss: value.estimated_loss,
             estimated_round_trip_time: value.estimated_rtt,
+        }
+    }
+}
+
+impl ConnectionMode {
+
+    pub(crate) fn to_pvpn_client_mode(self: &ConnectionMode) -> Result<PvpnClientMode, io::Error> {
+        match self {
+            ConnectionMode::NoLocalAgent { wg_private_key } => Ok(PvpnClientMode::NoLocalAgent {
+                wg_private_key: wg_private_key.clone().into(),
+            }),
         }
     }
 }

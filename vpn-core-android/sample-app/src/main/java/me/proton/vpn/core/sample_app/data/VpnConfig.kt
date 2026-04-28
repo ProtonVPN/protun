@@ -19,6 +19,7 @@
 
 package me.proton.vpn.core.sample_app.data
 
+import me.proton.vpn.core.api.ConnectionMode
 import me.proton.vpn.core.api.InitialConfig
 import me.proton.vpn.core.api.InterfaceConfig
 import me.proton.vpn.core.api.Peer
@@ -52,7 +53,7 @@ data class VpnConfig(
 
         return InitialConfig(
             interfaceConfig = InterfaceConfig(supportInTunnelIPv6 = false),
-            clientED25519PrivateKeyBase64 = clientPrivateKey,
+            mode = ConnectionMode.NoLocalAgent(clientX25519PrivateKeyBase64 = clientPrivateKey),
             peers = listOf(
                 Peer(
                     id = "0",

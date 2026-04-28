@@ -15,6 +15,7 @@
 // You should have received a copy of the GNU General Public License
 // along with ProtonVPN.  If not, see <https://www.gnu.org/licenses/>.
 
+use derive_more::Debug;
 use std::{io, net::IpAddr, thread::JoinHandle};
 use std::sync::Mutex;
 use crate::api::events::Event;
@@ -27,6 +28,7 @@ pub const PEER_PUB_KEY_SIZE_BYTES: usize = 32;
 
 /// [CLIENT_PRIV_KEY_SIZE_BYTES] bytes long client private key.
 #[derive(Clone, Debug)]
+#[debug("<wireguard private key>")]
 pub struct WgClientPrivateKey(pub [u8; CLIENT_PRIV_KEY_SIZE_BYTES]);
 
 /// Wrapper around IpAddr to be used in uniffi.
@@ -120,10 +122,21 @@ impl Connection {
 #[cfg_attr(feature = "uniffi", derive(uniffi::Record))]
 #[derive(Debug)]
 pub struct InitialConnectionConfig {
-    pub wg_private_key: WgClientPrivateKey,
     pub peers: Vec<PeerInfo>,
     pub network_available: bool,
     pub pcap_file: Option<PcapFileInfo>,
+    pub connection_mode: ConnectionMode,
+}
+
+#[cfg_attr(feature = "uniffi", derive(uniffi::Enum))]
+#[derive(Debug)]
+pub enum ConnectionMode {
+
+    /// Local agent connection will not be established, and [ConnectionState::Connected] state
+    /// will be emitted as soon as WG connection is ready.
+    NoLocalAgent {
+        wg_private_key: WgClientPrivateKey
+    },
 }
 
 #[cfg_attr(feature = "uniffi", derive(uniffi::Enum))]

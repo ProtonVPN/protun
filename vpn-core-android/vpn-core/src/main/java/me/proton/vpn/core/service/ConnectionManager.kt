@@ -35,7 +35,6 @@ import me.proton.vpn.core.api.PeerConnectionWaitReason
 import me.proton.vpn.core.api.VpnConnectionState
 import me.proton.vpn.core.api.VpnState
 import me.proton.vpn.core.internal.WallClockMs
-import me.proton.vpn.core.internal.decodeBase64
 import me.proton.vpn.core.internal.toCoreApi
 import me.proton.vpn.core.internal.toUniFFI
 import me.proton.vpn.core.service.usecases.EstablishTun
@@ -116,10 +115,10 @@ internal class ConnectionManager(
                 logger.log(LogLevel.INFO, "pvpn: Starting ProTUN, network available: $networkAvailable")
                 val nativeConnection = Connection.unixConnect(
                     config = InitialConnectionConfig(
-                        wgPrivateKey = config.clientED25519PrivateKeyBase64.decodeBase64(),
                         peers = config.peers.toUniFFI(),
                         networkAvailable = networkAvailable,
                         pcapFile = config.packetCaptureInfo?.toUniFFI(),
+                        connectionMode = config.mode.toUniFFI(),
                     ),
                     tunFd = tunFd.detachFd(),
                     stateChangeCallback = stateChangeCallback,

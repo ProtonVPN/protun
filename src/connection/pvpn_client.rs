@@ -15,6 +15,7 @@
 // You should have received a copy of the GNU General Public License
 // along with ProtonVPN.  If not, see <https://www.gnu.org/licenses/>.
 
+use std::io;
 use std::io::ErrorKind;
 use pvpnclient::os_interface::time::{Instant, InstantFactory, SystemTime, SystemTimeFactory};
 use pvpnclient::vpn::{WireguardPrivateKey};
@@ -53,28 +54,37 @@ pub(crate) struct PvpnClientImpl<'a> {
     realtime_factory: ClientRealtimeFactory,
 }
 
+pub(crate) enum PvpnClientMode {
+
+    NoLocalAgent {
+        wg_private_key: WireguardPrivateKey,
+    },
+}
+
 impl <'a> PvpnClientImpl<'a> {
     pub(crate) fn new(
         monotonic_factory: ClientMonotonicFactory,
         realtime_factory: ClientRealtimeFactory,
-        wg_private_key: WireguardPrivateKey,
+        mode: PvpnClientMode,
         seed: fn() -> Seed256
-    ) -> Self {
-        let client = Client::builder::<ClientRealtimeFactory, ClientMonotonicFactory>(
+    ) -> Result<Self, io::Error> {
+        let builder = Client::builder::<ClientRealtimeFactory, ClientMonotonicFactory>(
             seed(),
             monotonic_factory.now(),
             realtime_factory.now()
-        )
-            .no_local_agent()
-            .with_wg_private_key(wg_private_key)
-            .build();
-        PvpnClientImpl {
+        );
+        let client = match mode {
+            PvpnClientMode::NoLocalAgent { wg_private_key } => {
+                builder.no_local_agent().with_wg_private_key(wg_private_key)
+            }
+        }.build();
+        Ok(PvpnClientImpl {
             c: client,
             need_pull: true,
             wakeup_deadline: None,
             monotonic_factory,
             realtime_factory
-        }
+        })
     }
 
     fn handle_result<T>(&mut self, result: &PvpnReturn<T>) {

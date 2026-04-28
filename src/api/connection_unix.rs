@@ -116,9 +116,9 @@ fn create_pvpn_dependencies(
     let pvpn_client = PvpnClientImpl::new(
         ClientMonotonicFactory::new(),
         ClientRealtimeFactory::new(),
-        config.wg_private_key.clone().into(),
+        config.connection_mode.to_pvpn_client_mode()?,
         || CryptoSeedProvider::new(rand::rng()).into()
-    );
+    )?;
 
     Ok(
         PvpnDependencies {

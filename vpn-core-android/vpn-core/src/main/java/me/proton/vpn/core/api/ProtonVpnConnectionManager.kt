@@ -85,11 +85,6 @@ data class InitialConfig(
     val interfaceConfig: InterfaceConfig,
 
     /**
-     * 32 bytes base64-encoded ED25519 private key.
-     */
-    val clientED25519PrivateKeyBase64: String,
-
-    /**
      * List of available peers to connect to. Connection manager will select best configuration
      * (IP, protocol, ports) based on peer priority and reachability in current network conditions.
      */
@@ -102,7 +97,17 @@ data class InitialConfig(
      * capture dynamically.
      */
     val packetCaptureInfo: PacketCaptureInfo? = null,
+
+    val mode: ConnectionMode,
 ): Parcelable
+
+@Parcelize
+sealed interface ConnectionMode: Parcelable {
+
+    data class NoLocalAgent(
+        val clientX25519PrivateKeyBase64: String,
+    ) : ConnectionMode
+}
 
 /**
  * Information about packet capture (pcap) file for debugging.

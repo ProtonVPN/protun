@@ -41,7 +41,7 @@ use crate::{
         },
     },
 };
-use crate::api::connection::EventCallback;
+use crate::api::connection::{ConnectionMode, EventCallback};
 use crate::api::events::Event;
 use crate::connection::pvpn_connection::PvpnDependencies;
 use super::test_clocks::{TestMonotonicClock, TestRealtimeClock};
@@ -193,16 +193,18 @@ pub(crate) fn prepare_connection_test(
 
             let config = InitialConnectionConfig {
                 peers,
-                wg_private_key: WgClientPrivateKey(private_key),
                 network_available,
                 pcap_file: None,
+                connection_mode: ConnectionMode::NoLocalAgent {
+                    wg_private_key: WgClientPrivateKey(private_key)
+                },
             };
 
             let streams =
                 Box::new(MioStreams::new(tun_stream, socket_factory, poll).expect("Failed to create mio streams"));
 
             let client = Box::new(DummyPvpnClient::new(
-                config.wg_private_key.clone().into(),
+                WgClientPrivateKey(private_key).into(),
                 monotonic_clock_clone,
                 realtime_clock_clone,
             ));

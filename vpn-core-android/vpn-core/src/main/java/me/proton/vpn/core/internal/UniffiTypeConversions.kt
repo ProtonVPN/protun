@@ -19,6 +19,7 @@
 
 package me.proton.vpn.core.internal
 
+import me.proton.vpn.core.api.ConnectionMode
 import me.proton.vpn.core.api.ConnectionStats
 import me.proton.vpn.core.api.PacketCaptureStopReason
 import me.proton.vpn.core.api.PacketCaptureFile
@@ -106,6 +107,11 @@ fun Event.ConnectionStats.toCoreApi() = ConnectionStats(
     estimatedLoss = estimatedLoss,
     estimatedRoundTripTime = estimatedRoundTripTime,
 )
+
+fun ConnectionMode.toUniFFI(): uniffi.protun.ConnectionMode = when (this) {
+    is ConnectionMode.NoLocalAgent ->
+        uniffi.protun.ConnectionMode.NoLocalAgent(clientX25519PrivateKeyBase64.decodeBase64())
+}
 
 @OptIn(ExperimentalEncodingApi::class)
 fun String.decodeBase64(): ByteArray = Base64.decode(this)
