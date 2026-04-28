@@ -43,6 +43,7 @@ use crate::{
 };
 use crate::api::connection::EventCallback;
 use crate::api::events::Event;
+use crate::connection::pvpn_connection::PvpnDependencies;
 use super::test_clocks::{TestMonotonicClock, TestRealtimeClock};
 
 pub(crate) struct TestEventCallback {
@@ -174,25 +175,35 @@ pub(crate) fn prepare_connection_test(
     let socket_factory = Box::new(SocketFactoryUnix::new(None));
     let (poll, waker) =
         MioStreams::create_mio_poll_with_waker().expect("Failed to create mio poll");
-    let config = InitialConnectionConfig {
-        peers,
-        wg_private_key: WgClientPrivateKey(private_key),
-        network_available,
-        pcap_file: None,
-    };
     let connection = Connection::connect_internal(
         Box::new(waker),
         move || {
             let tun_stream =
                 create_udp_tun_stream(client_tun_socket_addr, tun_socket_addr).unwrap();
-            let streams = MioStreams::new(tun_stream, socket_factory, poll)
-                .expect("Failed to create mio streams");
-            Ok(Box::new(streams))
+
+            let config = InitialConnectionConfig {
+                peers,
+                wg_private_key: WgClientPrivateKey(private_key),
+                network_available,
+                pcap_file: None,
+            };
+
+            let streams =
+                Box::new(MioStreams::new(tun_stream, socket_factory, poll).expect("Failed to create mio streams"));
+
+            let client = Box::new(DummyPvpnClient::new(monotonic_clock_clone, realtime_clock_clone));
+
+            let state_change_callback = Box::new(TestStateChangedCallback::new(state_updated_sender));
+            let event_callback = Box::new(TestEventCallback::new());
+
+            Ok(PvpnDependencies {
+                config,
+                streams,
+                client,
+                state_change_callback,
+                event_callback,
+            })
         },
-        move || Box::new(DummyPvpnClient::new(monotonic_clock_clone, realtime_clock_clone)),
-        Box::new(TestStateChangedCallback::new(state_updated_sender)),
-        Box::new(TestEventCallback::new()),
-        config,
     );
 
     ConnectionTestHelper {

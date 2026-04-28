@@ -15,7 +15,7 @@
 // You should have received a copy of the GNU General Public License
 // along with ProtonVPN.  If not, see <https://www.gnu.org/licenses/>.
 
-use std::{io::Error, net::SocketAddr, sync::mpsc, thread::{self, JoinHandle}};
+use std::{io, net::SocketAddr, sync::mpsc, thread::{self, JoinHandle}};
 use std::cmp::min;
 use std::io::ErrorKind;
 use std::time::Duration;
@@ -40,6 +40,14 @@ use crate::api::state::State;
 use crate::connection::network_recovery_handler::NetworkRecoveryHandler;
 use crate::connection::pcap_stream::PcapStream;
 
+pub(crate) struct PvpnDependencies {
+    pub config: InitialConnectionConfig,
+    pub streams: Box<dyn Streams>,
+    pub client: Box<dyn PvpnClient>,
+    pub state_change_callback: Box<dyn StateChangedCallback>,
+    pub event_callback: Box<dyn EventCallback>,
+}
+
 /// Messages that can be sent to the connection loop.
 pub(crate) enum PvpnMessage {
     /// Disconnect the stop the connection loop.
@@ -59,36 +67,30 @@ pub(crate) type SendPvpnMessage = Box<dyn Fn(PvpnMessage) -> () + Send + Sync>;
 /// Starts a new thread with libpvpnclient connection loop.
 /// Returns a callback that can be used to send messages ([PvpnMessage]) to the connection loop.
 ///
-/// [create_streams] factory method to create a new [Streams] instance to be used for the connection.
-/// [pvpn_state_change_callback] callback that will receive pvpn connection state changes.
-/// [config] initial connection configuration.
+/// [create_pvpn_dependencies] factory that builds the connection dependencies (streams,
+/// client), executed in connection thread.
 pub(crate) fn start_pvpn_connection(
     poll_waker: Box<dyn PollWaker + Send + Sync>,
-    create_streams: impl FnOnce () -> Result<Box<dyn Streams>, Error> + Send + 'static,
-    create_client: impl FnOnce () -> Box<dyn PvpnClient> + Send + 'static,
-    state_change_callback: Box<dyn StateChangedCallback>,
-    event_callback: Box<dyn EventCallback>,
-    config: InitialConnectionConfig,
+    create_pvpn_dependencies: impl FnOnce() -> Result<PvpnDependencies, io::Error> + Sync + Send + 'static,
 ) -> (SendPvpnMessage, JoinHandle<()>) {
     let (message_sender, message_receiver) = mpsc::channel();
     let join_handle = thread::spawn(move || {
-        let client = create_client();
-        match create_streams() {
-            Ok(streams) => {
+        match create_pvpn_dependencies() {
+            Ok(deps) => {
                 let mut connection = PvpnConnection::new(
-                    client,
-                    streams,
-                    state_change_callback,
-                    event_callback,
+                    deps.client,
+                    deps.streams,
+                    deps.state_change_callback,
+                    deps.event_callback,
                     message_receiver,
-                    config.network_available,
-                    config.peers,
-                    config.wg_private_key,
-                    config.pcap_file,
+                    deps.config.network_available,
+                    deps.config.peers,
+                    deps.config.wg_private_key,
+                    deps.config.pcap_file,
                 );
                 connection.run();
             },
-            Err(err) => log::error!("failed to create streams: {err}"),
+            Err(err) => log::error!("failed to create connection: {err}"),
         }
     });
 
@@ -462,7 +464,7 @@ impl PvpnConnection {
         }
     }
 
-    fn handle_stream_error(&mut self, stream_id: StreamId, err: &Error) {
+    fn handle_stream_error(&mut self, stream_id: StreamId, err: &io::Error) {
         if stream_id > StreamId::TUN_STREAM_ID { // Only notify libpvpnclient about socket errors
             self.network_recovery_handler.on_stream_error(stream_id, err, self.client.monotonic_now());
             self.client.push_error(stream_id, err.kind());

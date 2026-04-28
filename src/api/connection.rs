@@ -15,12 +15,12 @@
 // You should have received a copy of the GNU General Public License
 // along with ProtonVPN.  If not, see <https://www.gnu.org/licenses/>.
 
-use std::{io::Error, net::IpAddr, thread::JoinHandle};
+use std::{io, net::IpAddr, thread::JoinHandle};
 use std::sync::Mutex;
 use crate::api::events::Event;
-use crate::connection::pvpn_connection::{start_pvpn_connection, PvpnMessage, SendPvpnMessage};
-use crate::connection::streams::{PollWaker, Streams};
-use crate::{api::state::State, connection::pvpn_client::PvpnClient};
+use crate::connection::pvpn_connection::{start_pvpn_connection, PvpnDependencies, PvpnMessage, SendPvpnMessage};
+use crate::connection::streams::PollWaker;
+use crate::api::state::State;
 
 pub const CLIENT_PRIV_KEY_SIZE_BYTES: usize = 32;
 pub const PEER_PUB_KEY_SIZE_BYTES: usize = 32;
@@ -57,20 +57,10 @@ impl Connection {
     /// Helper constructor to be used by platform-specific ones.
     pub(crate) fn connect_internal(
         poll_waker: Box<dyn PollWaker + Send + Sync>,
-        create_streams: impl FnOnce() -> Result<Box<dyn Streams>, Error> + Send + 'static,
-        create_client: impl FnOnce() -> Box<dyn PvpnClient> + Send + 'static,
-        state_change_callback: Box<dyn StateChangedCallback>,
-        event_callback: Box<dyn EventCallback>,
-        config: InitialConnectionConfig,
+        create_pvpn_dependencies: impl FnOnce() -> Result<PvpnDependencies, io::Error> + Sync + Send + 'static,
     ) -> Self {
-        let (send_pvpn_message, join_handle) = start_pvpn_connection(
-            poll_waker,
-            create_streams,
-            create_client,
-            state_change_callback,
-            event_callback,
-            config,
-        );
+        let (send_pvpn_message, join_handle) =
+            start_pvpn_connection(poll_waker, create_pvpn_dependencies);
         Self { send_pvpn_message, join_handle: Mutex::new(Some(join_handle)) }
     }
 }

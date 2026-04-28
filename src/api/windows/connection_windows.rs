@@ -15,6 +15,7 @@
 // You should have received a copy of the GNU General Public License
 // along with ProtonVPN.  If not, see <https://www.gnu.org/licenses/>.
 
+use std::io;
 use std::io::{Error, ErrorKind};
 use std::net::IpAddr;
 use std::sync::Arc;
@@ -32,6 +33,8 @@ use crate::connection::windows::tun_windows::TunStreamWindows;
 use crate::connection::windows::helpers::winsock::Winsock;
 use crate::api::{connection::{Connection, InitialConnectionConfig, StateChangedCallback}};
 use crate::api::logger::{init_logger, ClientLogger, LogLevel};
+use crate::connection::pvpn_connection::PvpnDependencies;
+use crate::connection::streams::Streams;
 use crate::connection::windows::helpers::wintun::wintun_session::WinTunSession;
 use crate::utils::common::option_ipv6addr_to_string;
 
@@ -122,27 +125,20 @@ impl WindowsConnection {
 
         let waker: Box<WindowsPollWaker> = Box::new(WindowsStreams::create_waker()?);
         let tun_clone: Arc<WinTunSession> = tun.clone();
-        let state_change_callback: Box<dyn StateChangedCallback> = Box::new(WindowsStateChangedCallback::new(client_state_change_callback));
+        let state_change_callback: Box<dyn StateChangedCallback> =
+            Box::new(WindowsStateChangedCallback::new(client_state_change_callback));
         let connection: Arc<Connection> = Arc::new(Connection::connect_internal(
             waker.clone(),
             move || {
-                let tun_stream: Box<TunStreamWindows> = Box::new(TunStreamWindows::new(tun_clone)
-                    .map_err(|e| Error::new(ErrorKind::Other, format!("Failed to create streams: {e}")))?);
-                let streams: WindowsStreams = WindowsStreams::new(tun_stream, waker, network_config.udp_socket);
-                Ok(Box::new(streams))
-            },
-            move || {
-                Box::new(
-                    PvpnClientImpl::new(
-                        ClientMonotonicFactory::new(),
-                        ClientRealtimeFactory::new(),
-                        || CryptoSeedProvider::new(rand::rng()).into()
-                    )
+                create_pvpn_dependencies(
+                    waker,
+                    connection_config,
+                    network_config.udp_socket,
+                    tun_clone,
+                    state_change_callback,
+                    event_callback,
                 )
-            },
-            state_change_callback.into(),
-            event_callback,
-            connection_config,
+            }
         ));
 
         Ok(WindowsConnection { connection, tun })
@@ -189,4 +185,35 @@ impl Drop for WindowsConnection {
     fn drop(&mut self) {
         log::info!("Dropping Windows Connection");
     }
+}
+
+fn create_pvpn_dependencies(
+    waker: Box<WindowsPollWaker>,
+    config: InitialConnectionConfig,
+    udp_socket_config: SocketConfig,
+    tun: Arc<WinTunSession>,
+    state_change_callback: Box<dyn StateChangedCallback>,
+    event_callback: Box<dyn EventCallback>,
+) -> Result<PvpnDependencies, io::Error> {
+    let tun_stream: Box<TunStreamWindows> = Box::new(TunStreamWindows::new(tun)
+        .map_err(|e| Error::new(ErrorKind::Other, format!("Failed to create streams: {e}")))?);
+    let streams: Box<dyn Streams> = Box::new(WindowsStreams::new(tun_stream, waker, udp_socket_config));
+
+    let client = Box::new(
+        PvpnClientImpl::new(
+            ClientMonotonicFactory::new(),
+            ClientRealtimeFactory::new(),
+            || CryptoSeedProvider::new(rand::rng()).into()
+        )
+    );
+
+    Ok(
+        PvpnDependencies {
+            config,
+            streams,
+            client,
+            state_change_callback,
+            event_callback,
+        }
+    )
 }

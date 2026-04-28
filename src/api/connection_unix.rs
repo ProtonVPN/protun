@@ -15,12 +15,16 @@
 // You should have received a copy of the GNU General Public License
 // along with ProtonVPN.  If not, see <https://www.gnu.org/licenses/>.
 
-use pvpnclient::os_interface::rand::CryptoSeedProvider;
+use crate::connection::mio::streams::MioStream;
+use crate::connection::pvpn_connection::PvpnDependencies;
 use crate::connection::time::{ClientMonotonicFactory, ClientRealtimeFactory};
 use crate::{
     api::connection::{Connection, EventCallback, InitialConnectionConfig, StateChangedCallback},
     connection::{mio::{socket_factory_unix::SocketFactoryUnix, streams::MioStreams}, pvpn_client::PvpnClientImpl, pvpn_connection::PvpnMessage},
 };
+use mio::Poll;
+use pvpnclient::os_interface::rand::CryptoSeedProvider;
+use std::io;
 
 #[cfg(feature = "apple")]
 type TunStreamUnixType = crate::connection::mio::tun_apple::TunStreamApple;
@@ -38,30 +42,22 @@ impl Connection {
         config: InitialConnectionConfig,
         tun_fd: i32,
         state_change_callback: Box<dyn StateChangedCallback>,
+        event_callback: Box<dyn EventCallback>,
         socket_fd_available_callback: Option<Box<dyn OnSocketFdAvailableCallback>>,
-        event_callback: Box<dyn EventCallback>
     ) -> Self {
-        let socket_factory = Box::new(SocketFactoryUnix::new(socket_fd_available_callback));
         let (poll, waker) = MioStreams::create_mio_poll_with_waker().expect("Failed to create mio poll");
         Self::connect_internal(
             Box::new(waker),
             move || {
-                let tun_stream = Box::new(TunStreamUnixType::new(tun_fd));
-                let streams = MioStreams::new(tun_stream, socket_factory, poll).expect("Failed to create mio streams");
-                Ok(Box::new(streams))
-            },
-            move || {
-                Box::new(
-                    PvpnClientImpl::new(
-                        ClientMonotonicFactory::new(),
-                        ClientRealtimeFactory::new(),
-                        || CryptoSeedProvider::new(rand::rng()).into()
-                    )
+                create_pvpn_dependencies(
+                    poll,
+                    config,
+                    tun_fd,
+                    state_change_callback,
+                    socket_fd_available_callback,
+                    event_callback,
                 )
-            },
-            state_change_callback.into(),
-            event_callback,
-            config,
+            }
         )
     }
 
@@ -87,4 +83,37 @@ where
     fn on_socket_fd_available(&self, socket_fd: i32) {
         self(socket_fd);
     }
+}
+
+fn create_pvpn_dependencies(
+    poll: Poll,
+    config: InitialConnectionConfig,
+    tun_fd: i32,
+    state_change_callback: Box<dyn StateChangedCallback>,
+    socket_fd_available_callback: Option<Box<dyn OnSocketFdAvailableCallback>>,
+    event_callback: Box<dyn EventCallback>,
+) -> Result<PvpnDependencies, io::Error> {
+    let socket_factory =
+        Box::new(SocketFactoryUnix::new(socket_fd_available_callback));
+
+    let tun_stream: Box<dyn MioStream> = Box::new(TunStreamUnixType::new(tun_fd));
+
+    let streams = MioStreams::new(tun_stream, socket_factory, poll)
+        .expect("Failed to create mio streams");
+
+    let pvpn_client = PvpnClientImpl::new(
+        ClientMonotonicFactory::new(),
+        ClientRealtimeFactory::new(),
+        || CryptoSeedProvider::new(rand::rng()).into()
+    );
+
+    Ok(
+        PvpnDependencies {
+            config,
+            streams: Box::new(streams),
+            client: Box::new(pvpn_client),
+            state_change_callback,
+            event_callback,
+        }
+    )
 }
