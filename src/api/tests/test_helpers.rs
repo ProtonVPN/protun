@@ -152,24 +152,30 @@ pub(crate) fn prepare_connection_test(
     peers: Vec<PeerInfo>,
     private_key: [u8; 32],
     network_available: bool,
+    create_tun: bool,
 ) -> ConnectionTestHelper {
     let _ = env_logger::builder().is_test(true).try_init();
 
     let (state_updated_sender, state_updated_receiver) = mpsc::channel::<State>();
-
-    // Prepare TUN
-    let tun_socket = std::net::UdpSocket::bind(SocketAddr::from_str("0.0.0.0:0").unwrap()).unwrap();
-    let client_tun_socket_addr = SocketAddr::from((
-        Ipv4Addr::LOCALHOST,
-        rand::rng().random_range(10000..65535),
-    ));
-    tun_socket.connect(client_tun_socket_addr).unwrap();
-    let tun_socket_addr = tun_socket.local_addr().unwrap();
-
     let monotonic_clock = TestMonotonicClock::new();
     let realtime_clock = TestRealtimeClock::new();
     let monotonic_clock_clone = monotonic_clock.clone();
     let realtime_clock_clone = realtime_clock.clone();
+
+    let client_tun_socket_addr = SocketAddr::from((
+        Ipv4Addr::LOCALHOST,
+        rand::rng().random_range(10000..65535),
+    ));
+
+    let tun_socket = if create_tun {
+        let tun_socket = std::net::UdpSocket::bind(SocketAddr::from_str("0.0.0.0:0").unwrap()).unwrap();
+        tun_socket.connect(client_tun_socket_addr).unwrap();
+        Some(tun_socket)
+    } else {
+        None
+    };
+
+    let tun_socket_addr = tun_socket.as_ref().map(|s| s.local_addr().unwrap());
 
     // Launch connection loop
     let socket_factory = Box::new(SocketFactoryUnix::new(None));
@@ -178,8 +184,12 @@ pub(crate) fn prepare_connection_test(
     let connection = Connection::connect_internal(
         Box::new(waker),
         move || {
-            let tun_stream =
-                create_udp_tun_stream(client_tun_socket_addr, tun_socket_addr).unwrap();
+            // Prepare TUN
+            let tun_stream = if let Some(tun_socket_addr) = tun_socket_addr {
+                Some(create_udp_tun_stream(client_tun_socket_addr, tun_socket_addr).unwrap())
+            } else {
+                None
+            };
 
             let config = InitialConnectionConfig {
                 peers,
@@ -208,7 +218,7 @@ pub(crate) fn prepare_connection_test(
 
     ConnectionTestHelper {
         buf: Box::new(vec![0u8; 4096]),
-        tun_socket: Some(tun_socket),
+        tun_socket,
         state_updated_receiver,
         connection,
         monotonic_clock,

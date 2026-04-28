@@ -40,7 +40,7 @@ fn happy_path_udp_connection() {
     let client_private_key = [1; 32];
     let (udp_server_socket, udp_server_peer) = create_udp_peer(1);
     let server_addr = udp_server_socket.local_addr().unwrap();
-    let mut helper = prepare_connection_test(vec![udp_server_peer], client_private_key, true);
+    let mut helper = prepare_connection_test(vec![udp_server_peer], client_private_key, true, true);
 
     let expected_peer = PeerConnectionInfo {
         peer_id: "peer_1".to_string(),
@@ -83,7 +83,7 @@ fn happy_path_tcp_connection() {
     let client_private_key = [1; 32];
     let (tcp_server_socket_listener, tcp_server_peer) = create_tcp_peer("127.0.0.1", 1);
     let server_addr = tcp_server_socket_listener.local_addr().unwrap();
-    let mut helper = prepare_connection_test(vec![tcp_server_peer], client_private_key, true);
+    let mut helper = prepare_connection_test(vec![tcp_server_peer], client_private_key, true, true);
 
     // expect handshake from client and connecting state
     let (mut tcp_server_socket, _) = tcp_server_socket_listener.accept().unwrap();
@@ -128,7 +128,7 @@ fn fallback_to_another_peer() {
     let (tcp_server_socket1_listener, tcp_server_peer1) = create_tcp_peer("127.0.0.1", 1);
     let (tcp_server_socket2_listener, tcp_server_peer2) = create_tcp_peer("127.0.0.2", 2);
 
-    let mut helper = prepare_connection_test(vec![tcp_server_peer1, tcp_server_peer2], client_private_key, true);
+    let mut helper = prepare_connection_test(vec![tcp_server_peer1, tcp_server_peer2], client_private_key, true, true);
 
     // close connection to peer 1 after receiving hanshake
     let (mut tcp_server_socket1, _) = tcp_server_socket1_listener.accept().unwrap();
@@ -152,7 +152,7 @@ fn connect_waiting_for_network() {
     // Create client without network connectivity
     let client_private_key = [1; 32];
     let (udp_server_socket, udp_server_peer) = create_udp_peer(1);
-    let mut helper = prepare_connection_test(vec![udp_server_peer], client_private_key, false);
+    let mut helper = prepare_connection_test(vec![udp_server_peer], client_private_key, false, true);
 
     thread::sleep(Duration::from_millis(5));
     helper.expect_state(|state| matches!(state, State::WaitingForAction { reason: WaitReason::WaitingForNetwork }));
@@ -172,7 +172,7 @@ fn connect_waiting_for_network() {
 fn pause_and_resume_network_while_connected() {
     let client_private_key = [1; 32];
     let (udp_server_socket, udp_server_peer) = create_udp_peer(1);
-    let mut helper = prepare_connection_test(vec![udp_server_peer], client_private_key, true);
+    let mut helper = prepare_connection_test(vec![udp_server_peer], client_private_key, true, true);
 
     let client_addr1 = helper.accept_and_verify_udp_connection(&udp_server_socket);
 
@@ -193,7 +193,7 @@ fn pause_and_resume_network_while_connected() {
 fn update_peer_while_connected() {
     let client_private_key = [1; 32];
     let (udp_server_socket1, udp_server_peer1) = create_udp_peer(1);
-    let mut helper = prepare_connection_test(vec![udp_server_peer1], client_private_key, true);
+    let mut helper = prepare_connection_test(vec![udp_server_peer1], client_private_key, true, true);
 
     let client_addr1 = helper.accept_and_verify_udp_connection(&udp_server_socket1);
 
@@ -208,10 +208,25 @@ fn update_peer_while_connected() {
 }
 
 #[test_log::test]
+fn connect_without_tun() {
+    // Create client without network connectivity
+    let client_private_key = [1; 32];
+    let (udp_server_socket, udp_server_peer) = create_udp_peer(1);
+    let mut helper = prepare_connection_test(vec![udp_server_peer], client_private_key, true, false);
+
+    let (handshake, client_addr) = helper.recv_udp(&udp_server_socket).unwrap();
+    assert!(matches!(handshake, DummyProtocolPacket::Handshake(_, _)));
+    helper.send_udp_to(&udp_server_socket, &client_addr, &DummyProtocolPacket::HandshakeResponse).unwrap();
+    helper.expect_state(|state| matches!(state, State::Connected { .. }));
+
+    helper.connection.disconnect_and_wait();
+}
+
+#[test_log::test]
 fn update_private_key_while_connected() {
     let client_private_key = [1; 32];
     let (udp_server_socket, udp_server_peer) = create_udp_peer(1);
-    let mut helper = prepare_connection_test(vec![udp_server_peer], client_private_key, true);
+    let mut helper = prepare_connection_test(vec![udp_server_peer], client_private_key, true, true);
 
     let client_addr = helper.accept_and_verify_udp_connection(&udp_server_socket);
 

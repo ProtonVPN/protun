@@ -40,7 +40,7 @@ impl Connection {
     #[cfg_attr(feature = "uniffi", uniffi::constructor)]
     pub fn unix_connect(
         config: InitialConnectionConfig,
-        tun_fd: i32,
+        tun_fd: Option<i32>,
         state_change_callback: Box<dyn StateChangedCallback>,
         event_callback: Box<dyn EventCallback>,
         socket_fd_available_callback: Option<Box<dyn OnSocketFdAvailableCallback>>,
@@ -63,8 +63,16 @@ impl Connection {
 
     /// Notifies library that file descriptor for tun device has changed.
     #[cfg_attr(feature = "uniffi", uniffi::method)]
-    pub fn update_unix_tun(&self, tun_fd: i32) {
-        (self.send_pvpn_message)(PvpnMessage::UpdateTun(Box::new(move || Box::new(TunStreamUnixType::new(tun_fd)))));
+    pub fn update_unix_tun(&self, tun_fd: Option<i32>) {
+        (self.send_pvpn_message)(PvpnMessage::UpdateTun(
+            Box::new(move || {
+                if let Some(tun_fd) = tun_fd {
+                    Some(Box::new(TunStreamUnixType::new(tun_fd)))
+                } else {
+                    None
+                }
+            }))
+        );
     }
 }
 
@@ -88,7 +96,7 @@ where
 fn create_pvpn_dependencies(
     poll: Poll,
     config: InitialConnectionConfig,
-    tun_fd: i32,
+    tun_fd: Option<i32>,
     state_change_callback: Box<dyn StateChangedCallback>,
     socket_fd_available_callback: Option<Box<dyn OnSocketFdAvailableCallback>>,
     event_callback: Box<dyn EventCallback>,
@@ -96,7 +104,11 @@ fn create_pvpn_dependencies(
     let socket_factory =
         Box::new(SocketFactoryUnix::new(socket_fd_available_callback));
 
-    let tun_stream: Box<dyn MioStream> = Box::new(TunStreamUnixType::new(tun_fd));
+    let tun_stream: Option<Box<dyn MioStream>> = if let Some(tun_fd) = tun_fd {
+        Some(Box::new(TunStreamUnixType::new(tun_fd)))
+    } else {
+        None
+    };
 
     let streams = MioStreams::new(tun_stream, socket_factory, poll)
         .expect("Failed to create mio streams");

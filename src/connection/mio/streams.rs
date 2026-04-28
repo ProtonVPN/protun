@@ -50,10 +50,11 @@ impl MioStreams {
     }
 
     /// Creates a new MioStreams instance.
-    /// [tun] mio-compatible stream for the tun device.
+    /// [tun] mio-compatible stream for the tun device. None can be passed if TUN is not needed
+    ///     (e.g., for testing VPN connection to the server)
     /// [poll] should be created with [create_mio_poll_with_waker].
     pub(crate) fn new(
-        tun: Box<dyn MioStream>,
+        tun: Option<Box<dyn MioStream>>,
         socket_factory: Box<dyn MioSocketFactory>,
         poll: Poll,
     ) -> Result<Self, io::Error> {
@@ -64,7 +65,9 @@ impl MioStreams {
             next_token: POLL_WAKER_TOKEN.0 + 1,
             socket_factory,
         };
-        ret.register_stream(StreamId::TUN_STREAM_ID, tun, mio::Interest::READABLE)?;
+        if let Some(tun) = tun {
+            ret.register_stream(StreamId::TUN_STREAM_ID, tun, mio::Interest::READABLE)?;
+        }
         Ok(ret)
     }
 
@@ -151,8 +154,10 @@ impl Streams for MioStreams {
     fn update_tun(&mut self, create_tun_stream: CreateTunStream) {
         self.close_stream(StreamId::TUN_STREAM_ID);
         let tun = create_tun_stream();
-        self.register_stream(StreamId::TUN_STREAM_ID, tun, mio::Interest::READABLE)
-            .expect("failed to register tun stream");
+        if let Some(tun) = tun {
+            self.register_stream(StreamId::TUN_STREAM_ID, tun, mio::Interest::READABLE)
+                .expect("failed to register tun stream");
+        }
     }
 }
 
