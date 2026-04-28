@@ -17,6 +17,7 @@
 
 use std::iter::once;
 use std::{io, net::SocketAddr};
+use crate::api::windows::connection_windows::SocketConfig;
 use crate::api::windows::protun_error::ProTunFatalError;
 use crate::connection::streams::{PollResult, Stream, Streams};
 use crate::connection::windows::helpers::poll_waker::WindowsPollWaker;
@@ -52,6 +53,7 @@ pub(crate) struct WindowsStreams {
     waker: Box<WindowsPollWaker>,
     /// This vector exists to not be generated in every poll (handles = [stream handles + waker handle])
     handles: Vec<HANDLE>,
+    udp_socket_config: SocketConfig,
 }
 
 impl WindowsStreams {
@@ -59,11 +61,12 @@ impl WindowsStreams {
         WindowsPollWaker::new()
     }
 
-    pub(crate) fn new(tun: Box<dyn WindowsStream>, waker: Box<WindowsPollWaker>) -> Self {
+    pub(crate) fn new(tun: Box<dyn WindowsStream>, waker: Box<WindowsPollWaker>, udp_socket_config: SocketConfig) -> Self {
         let mut streams = WindowsStreams {
             streams: Vec::new(),
             handles: Vec::new(),
             waker: waker,
+            udp_socket_config
         };
         streams.register_stream(StreamId::TUN_STREAM_ID, tun);
         streams
@@ -94,28 +97,15 @@ impl WindowsStreams {
         }
     }
 
-    fn handle_tun_event(&mut self) -> Result<Vec<PollResult>, io::Error> {
-        match self.streams.get_mut(TUN_STREAM_INDEX) {
-            Some(s) => Ok(vec![Self::create_poll_result(s)]),
-            None => { 
-                const ERROR_MESSAGE: &str = "The poll returned a TUN message event but the streams vector is empty";
-                log::error!("{}", ERROR_MESSAGE);
-                Err(io::Error::new(io::ErrorKind::Other, ERROR_MESSAGE))
-            },
-        }
-    }
-    
-    fn handle_stream_event(&mut self, stream_index: usize) -> Result<Vec<PollResult>, io::Error> {
-        match self.streams.get_mut(stream_index) {
-            Some(s) => Ok(vec![Self::create_poll_result(s)]),
-            None => { 
-                let error_message: String = format!("The poll returned the invalid index {} (Streams size: {})", stream_index, self.streams.len());
-                log::error!("{}", error_message);
-                Err(io::Error::new(io::ErrorKind::Other, error_message))
-            },
-        }
+    fn get_all_streams_as_poll_results(&mut self) -> Vec<PollResult> {
+        self.streams
+            .iter_mut()
+            .rev()
+            .map(|s| Self::create_poll_result(s))
+            .collect()
     }
 }
+
 impl Streams for WindowsStreams {
 
     fn get_stream(&mut self, stream_id: StreamId) -> Option<&mut dyn Stream> {
@@ -137,7 +127,7 @@ impl Streams for WindowsStreams {
 
     fn open_new_udp_stream(&mut self, stream_id: StreamId, remote_socket: SocketAddr) -> io::Result<()> {
         log::debug!("Opening up a new UDP socket");
-        match UdpSocketStream::new(remote_socket) {
+        match UdpSocketStream::new(remote_socket, &self.udp_socket_config) {
             Ok(udp_socket_stream) => {
                 self.register_stream(stream_id, Box::new(udp_socket_stream));
                 Ok(())
@@ -167,15 +157,14 @@ impl Streams for WindowsStreams {
         ) };
         let result_index: u32 = wait_result.0;
         
-        match result_index {
-            TIMEOUT_EVENT => Ok(Vec::new()),
+        Ok(match result_index {
+            TIMEOUT_EVENT => Vec::new(),
             WAKER_EVENT => {
                 self.waker.reset();
-                Ok(Vec::new())
+                Vec::new()
             }
-            TUN_EVENT => self.handle_tun_event(),
-            _ => self.handle_stream_event((result_index - 1) as usize)
-        }
+            _ => self.get_all_streams_as_poll_results()
+        })
     }
 }
 

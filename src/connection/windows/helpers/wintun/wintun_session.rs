@@ -44,10 +44,14 @@ pub struct WinTunSession {
 
 impl WinTunSession {
     pub fn create(server_ips: Vec<IpAddr>, adapter_config: AdapterConfig) -> Result<Self, ProTunFatalError> {
-        log::info!("Creating WinTUN adapter");
+        let buffer_size_bytes: u32 = Self::get_valid_wintun_buffer_size(adapter_config.buffer_size_bytes);
+
+        log::info!("Creating WinTUN adapter (Buffer size: {} bytes)", buffer_size_bytes);
         let adapter: Arc<Adapter> = Self::create_wintun_adapter()?;
         let interface_index: u32 = adapter.get_adapter_index()
             .map_err(|e| ProTunFatalError::WintunAdapterIndexFetchFailed(format!("Failed to get the Wintun adapter index. Error: {e}")))?;
+        
+        log::info!("WinTUN uses interface with index {interface_index}");
 
         _ = set_ipv4_adapter_configurations(interface_index, adapter_config.mtu);
         if adapter_config.is_ipv6_enabled {
@@ -59,13 +63,10 @@ impl WinTunSession {
         
         let (client_ipv4_addr, client_ipv6_addr) = set_adapter_ip_addresses(interface_index)?;
         let (server_ipv4_addr, server_ipv6_addr) = calculate_and_set_dns_servers(adapter_config.custom_dns_server_ips, client_ipv4_addr, client_ipv6_addr);
-        
-        log::info!("WinTUN uses interface with index {interface_index}");
 
         let routes: Routes = Routes::create(server_ipv4_addr, server_ipv6_addr, interface_index, server_ips)?;
 
-        log::debug!("Creating WinTUN sessions (streams)");
-        let session: Arc<Session> = Arc::new(adapter.start_session(wintun::MAX_RING_CAPACITY)
+        let session: Arc<Session> = Arc::new(adapter.start_session(buffer_size_bytes)
             .map_err(|e| ProTunFatalError::WintunSessionCreationFailed(format!("Failed to create the Wintun session. Error: {e}")))?);
         
         log::info!("WinTUN initialization complete");
@@ -79,6 +80,20 @@ impl WinTunSession {
             server_ipv6_addr: server_ipv6_addr,
             routes: routes
         })
+    }
+    
+    fn get_valid_wintun_buffer_size(proposed_size: u32) -> u32 {
+        let valid_size: u32 = proposed_size
+            .checked_next_power_of_two()
+            .unwrap_or(wintun::MAX_RING_CAPACITY)
+            .clamp(wintun::MIN_RING_CAPACITY, wintun::MAX_RING_CAPACITY);
+
+        if valid_size != proposed_size {
+            log::error!("The provided WinTUN ring capacity of {proposed_size} is invalid as it is either below the minimum, 
+                above the maximum, or not a power of two. The value is going to be set for the best closest value: {valid_size}");
+        }
+
+        valid_size
     }
 
     fn create_wintun_adapter() -> Result<Arc<Adapter>, ProTunFatalError> {

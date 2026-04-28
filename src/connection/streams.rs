@@ -66,6 +66,16 @@ pub(crate) enum WouldBlock { Yes, No }
 #[derive(Debug, PartialEq)]
 pub(crate) enum PendingWrite { Yes, No }
 
+impl From<bool> for PendingWrite {
+    fn from(value: bool) -> Self {
+        if value {
+            PendingWrite::Yes
+        } else {
+            PendingWrite::No
+        }
+    }
+}
+
 /// Result of a stream read/write operation.
 #[derive(Debug)]
 pub(crate) enum StreamResult {

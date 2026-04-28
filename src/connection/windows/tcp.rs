@@ -27,6 +27,7 @@ use crate::connection::streams::{PendingWrite, Stream, StreamResult, WouldBlock}
 use crate::connection::windows::helpers::local_ip_finder::{get_ipv4_internet_interface, get_ipv6_internet_interface};
 use crate::connection::windows::streams::{WindowsStream, WindowsStreamState};
 use crate::connection::windows::helpers::socket_handle::{SocketEvent, SocketHandle};
+use crate::utils::windows::io_error::{Transport, OsErrorToSocketErrorAction, SocketErrorAction};
 
 pub(crate) struct TcpSocketStream {
     socket: TcpStream,
@@ -137,8 +138,8 @@ impl WindowsStream for TcpSocketStream {
 
 impl Stream for TcpSocketStream {
     fn read(&mut self, buf: &mut [u8]) -> StreamResult {
-        let ret = self.socket.read(buf);
-        let pending_write = if self.write_buffer.is_empty() { PendingWrite::No } else { PendingWrite::Yes };
+        let ret: Result<usize, Error> = self.socket.read(buf);
+        let pending_write: PendingWrite = (!self.write_buffer.is_empty()).into();
         match ret {
             Ok(bytes_count) => {
                 if bytes_count == 0 {
@@ -151,10 +152,9 @@ impl Stream for TcpSocketStream {
             },
             Err(e) => {
                 self.is_readable = false;
-                if e.kind() == io::ErrorKind::WouldBlock {
-                    StreamResult::ok(0, WouldBlock::Yes, pending_write)
-                } else {
-                    StreamResult::Err(e)
+                match e.to_socket_error_action(Transport::TCP) {
+                    SocketErrorAction::FatalSocketError => StreamResult::Err(e),
+                    SocketErrorAction::WouldBlock => StreamResult::ok(0, WouldBlock::Yes, pending_write),
                 }
             }
         }
@@ -184,10 +184,9 @@ impl Stream for TcpSocketStream {
                 Err(e) => {
                     self.write_buffer.push_front(data);
                     self.is_writable = false;
-                    return if e.kind() == io::ErrorKind::WouldBlock {
-                        StreamResult::ok(bytes_written, WouldBlock::Yes, PendingWrite::Yes)
-                    } else {
-                        StreamResult::Err(e)
+                    return match e.to_socket_error_action(Transport::TCP) {
+                        SocketErrorAction::FatalSocketError => StreamResult::Err(e),
+                        SocketErrorAction::WouldBlock => StreamResult::ok(bytes_written, WouldBlock::Yes, PendingWrite::Yes),
                     }
                 }
             }

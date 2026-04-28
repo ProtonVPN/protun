@@ -15,4 +15,5 @@
 // You should have received a copy of the GNU General Public License
 // along with ProtonVPN.  If not, see <https://www.gnu.org/licenses/>.
 
+pub(crate) mod io_error;
 pub(crate) mod registry_editor;

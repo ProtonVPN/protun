@@ -82,10 +82,23 @@ impl Drop for ProTun {
 }
 
 #[cfg_attr(feature = "uniffi", derive(uniffi::Record))]
+pub struct NetworkConfig {
+    pub tun_adapter: AdapterConfig,
+    pub udp_socket: SocketConfig,
+}
+
+#[cfg_attr(feature = "uniffi", derive(uniffi::Record))]
 pub struct AdapterConfig {
     pub custom_dns_server_ips: Vec<IpAddress>,
     pub is_ipv6_enabled: bool,
     pub mtu: u16,
+    pub buffer_size_bytes: u32,
+}
+
+#[cfg_attr(feature = "uniffi", derive(uniffi::Record))]
+pub struct SocketConfig {
+    pub send_buffer_size_bytes: u32,
+    pub receive_buffer_size_bytes: u32,
 }
 
 #[cfg_attr(feature = "uniffi", derive(uniffi::Object))]
@@ -100,12 +113,12 @@ impl WindowsConnection {
     #[cfg_attr(feature = "uniffi", uniffi::constructor)]
     pub fn connect(
         connection_config: InitialConnectionConfig,
-        adapter_config: AdapterConfig, 
+        network_config: NetworkConfig,
         client_state_change_callback: Box<dyn StateChangedCallback>,
         event_callback: Box<dyn EventCallback>
     ) -> Result<Self, ProTunFatalError> {
         let server_ips: Vec<IpAddr> = connection_config.peers.iter().map(|peer| peer.server_ip.0).collect();
-        let tun: Arc<WinTunSession> = Arc::new(WinTunSession::create(server_ips, adapter_config)?);
+        let tun: Arc<WinTunSession> = Arc::new(WinTunSession::create(server_ips, network_config.tun_adapter)?);
 
         let waker: Box<WindowsPollWaker> = Box::new(WindowsStreams::create_waker()?);
         let tun_clone: Arc<WinTunSession> = tun.clone();
@@ -115,7 +128,7 @@ impl WindowsConnection {
             move || {
                 let tun_stream: Box<TunStreamWindows> = Box::new(TunStreamWindows::new(tun_clone)
                     .map_err(|e| Error::new(ErrorKind::Other, format!("Failed to create streams: {e}")))?);
-                let streams: WindowsStreams = WindowsStreams::new(tun_stream, waker);
+                let streams: WindowsStreams = WindowsStreams::new(tun_stream, waker, network_config.udp_socket);
                 Ok(Box::new(streams))
             },
             move || {
