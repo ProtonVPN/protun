@@ -61,6 +61,7 @@ internal class ConnectionManager(
 ) {
     data class ActiveConnection(
         val connection: Connection,
+        val currentConfig: InitialConfig,
         val validatedNetworks: Set<Network>,
         val startedAt: Date,
         val stateChangeCallback: ProTunStateChangedCallback,
@@ -106,8 +107,28 @@ internal class ConnectionManager(
         socketProtectCallback: ProTunSocketProtectCallback,
         eventCallback: EventCallback
     ) {
-        if (activeConnection != null)
+        val currentConfig = activeConnection?.currentConfig
+        if (currentConfig != null) {
+            // For local agent mode if there's active connection just update it instead of full restart
+            if (currentConfig.mode is ConnectionMode.LocalAgent && config.mode is ConnectionMode.LocalAgent) {
+                if (currentConfig.peers != config.peers)
+                    updatePeers(config.peers)
+
+                if (currentConfig.mode.settings != config.mode.settings)
+                    updateLocalAgentSettings(config.mode.settings)
+
+                if (currentConfig.packetCaptureInfo != config.packetCaptureInfo)
+                    setPacketCaptureEnabled(config.packetCaptureInfo)
+
+                if (currentConfig.interfaceConfig != config.interfaceConfig)
+                    updateInterfaceConfig(config.interfaceConfig, builder)
+
+                activeConnection = activeConnection?.copy(currentConfig = config)
+                return
+            }
+
             clearConnection(VpnConnectionState.Connecting(connections = emptyList(), waitReasons = emptyList()))
+        }
 
         when (val establishResult = establishTun(config.interfaceConfig, builder)) {
             is EstablishTun.Result.Success -> {
@@ -134,6 +155,7 @@ internal class ConnectionManager(
                     validatedNetworks = validatedNetworks,
                     stateChangeCallback = stateChangeCallback,
                     startedAt = Date(wallClockMs()),
+                    currentConfig = config,
                 )
             }
 
