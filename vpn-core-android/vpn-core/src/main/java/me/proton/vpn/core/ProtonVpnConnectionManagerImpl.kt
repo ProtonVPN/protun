@@ -213,7 +213,7 @@ internal class ProtonVpnConnectionManagerImpl(
         }
     }
 
-    override fun disconnect() {
+    override fun disconnect(error: VpnDisconnectError?) {
         mainScope.launch {
             sendAction(ProTunVpnService.VpnAction.Disconnect)
             if (bound) {

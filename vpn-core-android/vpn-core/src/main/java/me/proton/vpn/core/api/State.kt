@@ -115,6 +115,11 @@ sealed interface VpnDisconnectError : Parcelable {
      * attempting to connect.
      */
     data object VpnPermissionMissing: VpnDisconnectError
+
+    /**
+     * Custom error that the client app can set on disconnect.
+     */
+    data class AppError(val e: Throwable): VpnDisconnectError
 }
 
 /**

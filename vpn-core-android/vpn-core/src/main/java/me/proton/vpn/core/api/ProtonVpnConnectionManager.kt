@@ -81,7 +81,7 @@ interface ProtonVpnConnectionManager {
      */
     fun setPacketCaptureEnabled(packetCaptureInfo: PacketCaptureInfo?)
 
-    fun disconnect()
+    fun disconnect(error: VpnDisconnectError? = null)
 }
 
 @Parcelize
