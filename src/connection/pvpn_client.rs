@@ -19,7 +19,7 @@ use std::io;
 use std::io::ErrorKind;
 use pvpnclient::os_interface::time::{Instant, InstantFactory, SystemTime, SystemTimeFactory};
 use pvpnclient::vpn::{WireguardPrivateKey};
-use pvpnclient::{Deadline, TunnelInfo};
+use pvpnclient::{Deadline, Settings, TunnelInfo};
 use pvpnclient::Client;
 use pvpnclient::{Action, PvpnReturn, StreamId, Task};
 use pvpnclient::id::CaptureId;
@@ -28,6 +28,9 @@ use pvpnclient::peer::{Peer, PeerAddr};
 use pvpnclient::stats::TunnelStats;
 use crate::connection::time::{ClientMonotonicFactory, ClientRealtimeFactory};
 use crate::connection::util::{error_kind_to_socket_err};
+
+#[cfg(feature = "local-agent")]
+use pvpnclient::{Ed25519PrivateKey, LocalAgentAction, LocalAgentCertificate, LocalAgentMessage, MuonAuth};
 
 /// Abstraction over [pvpnclient::pvpnclient::Client]
 pub trait PvpnClient {
@@ -45,6 +48,12 @@ pub trait PvpnClient {
     fn get_stats(&mut self) -> Option<TunnelStats>;
     fn monotonic_now(&self) -> Instant;
     fn set_packet_capture_enabled(&mut self, enabled: bool) -> CaptureId;
+    fn set_settings(&mut self, settings: Settings);
+
+    #[cfg(feature = "local-agent")]
+    fn pull_local_agent(&mut self) -> Option<LocalAgentMessage>;
+    #[cfg(feature = "local-agent")]
+    fn push_local_agent(&mut self, action: LocalAgentAction);
 }
 pub(crate) struct PvpnClientImpl<'a> {
     c: Client<'a>,
@@ -55,6 +64,15 @@ pub(crate) struct PvpnClientImpl<'a> {
 }
 
 pub(crate) enum PvpnClientMode {
+
+    #[cfg(feature = "local-agent")]
+    LocalAgent {
+        app_version: String,
+        user_agent: String,
+        private_key: Option<Ed25519PrivateKey>,
+        certificate: Option<LocalAgentCertificate>,
+        muon_auth: Option<MuonAuth>,
+    },
 
     NoLocalAgent {
         wg_private_key: WireguardPrivateKey,
@@ -74,6 +92,19 @@ impl <'a> PvpnClientImpl<'a> {
             realtime_factory.now()
         );
         let client = match mode {
+            #[cfg(feature = "local-agent")]
+            PvpnClientMode::LocalAgent {
+                app_version,
+                user_agent,
+                private_key,
+                certificate,
+                muon_auth: auth,
+            } => {
+                let muon_app = muon::App::new(app_version)
+                    .map_err(|e| io::Error::new(ErrorKind::Other, e))?
+                    .with_user_agent(user_agent);
+                builder.with_local_agent(private_key, certificate, muon_app.into(), auth)
+            }
             PvpnClientMode::NoLocalAgent { wg_private_key } => {
                 builder.no_local_agent().with_wg_private_key(wg_private_key)
             }
@@ -125,6 +156,17 @@ impl <'a> PvpnClient for PvpnClientImpl<'a> {
         pull_result.value
     }
 
+    #[cfg(feature = "local-agent")]
+    fn pull_local_agent(&mut self) -> Option<LocalAgentMessage> {
+        self.c.pull_local_agent()
+    }
+
+    #[cfg(feature = "local-agent")]
+    fn push_local_agent(&mut self, action: LocalAgentAction) {
+        let result = &self.c.push_local_agent(action);
+        self.handle_result(result);
+    }
+
     fn push(&mut self, action: Action) {
         let result = &self.c.push(action);
         if let Err(e) = &result.value {
@@ -161,6 +203,11 @@ impl <'a> PvpnClient for PvpnClientImpl<'a> {
 
     fn monotonic_now(&self) -> Instant {
         self.monotonic_factory.now()
+    }
+
+    fn set_settings(&mut self, settings: Settings) {
+        let result = self.c.set_settings(settings);
+        self.handle_result(&result);
     }
 
     fn set_packet_capture_enabled(&mut self, enabled: bool) -> CaptureId {

@@ -20,7 +20,8 @@ use std::{
         mpsc::{self, Receiver}
     }, time::Duration
 };
-use std::sync::Mutex;
+use std::collections::HashMap;
+use std::sync::{Mutex, RwLock};
 use std::time::Instant;
 use mio::net::UdpSocket;
 use rand::Rng;
@@ -41,7 +42,7 @@ use crate::{
         },
     },
 };
-use crate::api::connection::{ConnectionMode, EventCallback};
+use crate::api::connection::{CacheKey, ConnectionMode, EventCallback, PersistentCache};
 use crate::api::events::Event;
 use crate::connection::pvpn_connection::PvpnDependencies;
 use super::test_clocks::{TestMonotonicClock, TestRealtimeClock};
@@ -71,6 +72,29 @@ impl TestStateChangedCallback {
 impl StateChangedCallback for TestStateChangedCallback {
     fn on_state_changed(&self, new_state: VpnState) {
         self.on_state_updated.send(new_state).unwrap();
+    }
+}
+
+struct InMemoryCache {
+    cache: RwLock<HashMap<CacheKey, Vec<u8>>>
+}
+impl InMemoryCache {
+    fn new() -> Self {
+        Self { cache: RwLock::new(HashMap::new()) }
+    }
+}
+impl PersistentCache for InMemoryCache {
+
+    fn put(&self, key: CacheKey, bytes: Vec<u8>) {
+        self.cache.write().unwrap().insert(key, bytes);
+    }
+
+    fn get(&self, key: CacheKey) -> Option<Vec<u8>> {
+        self.cache.read().unwrap().get(&key).cloned()
+    }
+
+    fn clear(&self) {
+        self.cache.write().unwrap().clear();
     }
 }
 
@@ -191,6 +215,8 @@ pub(crate) fn prepare_connection_test(
                 None
             };
 
+            let cache: Box<dyn PersistentCache> = Box::new(InMemoryCache::new());
+
             let config = InitialConnectionConfig {
                 peers,
                 network_available,
@@ -218,6 +244,7 @@ pub(crate) fn prepare_connection_test(
                 client,
                 state_change_callback,
                 event_callback,
+                cache,
             })
         },
     );
@@ -252,6 +279,8 @@ pub(crate) fn create_udp_peer(id: u8) -> (std::net::UdpSocket, PeerInfo) {
         tcp_ports: vec![],
         tls_ports: vec![],
         priority: 0,
+        #[cfg(feature = "local-agent")]
+        exit_label: None,
     })
 }
 
@@ -266,6 +295,8 @@ pub(crate) fn create_tcp_peer(ip: &str, id: u8) -> (std::net::TcpListener, PeerI
         tcp_ports: vec![socket_addr.port()],
         tls_ports: vec![],
         priority: 0,
+        #[cfg(feature = "local-agent")]
+        exit_label: None,
     })
 }
 

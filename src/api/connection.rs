@@ -23,6 +23,9 @@ use crate::connection::pvpn_connection::{start_pvpn_connection, PvpnDependencies
 use crate::connection::streams::PollWaker;
 use crate::api::state::VpnState;
 
+#[cfg(feature = "local-agent")]
+use crate::api::local_agent::LocalAgentSettings;
+
 pub const CLIENT_PRIV_KEY_SIZE_BYTES: usize = 32;
 pub const PEER_PUB_KEY_SIZE_BYTES: usize = 32;
 
@@ -112,10 +115,32 @@ impl Connection {
     pub fn stop_packet_capture(&self) {
         (self.send_pvpn_message)(PvpnMessage::StopPacketCapture);
     }
-    
+
+    /// One-off call to get connection stats - they will be delivered via [Event::ConnectionStats].
     #[cfg_attr(feature = "uniffi", uniffi::method)]
-    pub fn get_stats(&self) {
+    pub fn request_stats(&self) {
         (self.send_pvpn_message)(PvpnMessage::RequestStats);
+    }
+}
+
+#[cfg_attr(feature = "uniffi", uniffi::export)]
+#[cfg(feature = "local-agent")]
+impl Connection {
+
+    #[cfg_attr(feature = "uniffi", uniffi::method)]
+    pub fn update_local_agent_settings(&self, settings: LocalAgentSettings) {
+        (self.send_pvpn_message)(PvpnMessage::UpdateLocalAgentSettings(settings));
+    }
+
+    /// One-off call to get local agent stats - they will be delivered via [Event::LocalAgentStats].
+    #[cfg_attr(feature = "uniffi", uniffi::method)]
+    pub fn request_local_agent_stats(&self) {
+        (self.send_pvpn_message)(PvpnMessage::RequestLocalAgentStats);
+    }
+
+    #[cfg_attr(feature = "uniffi", uniffi::method)]
+    pub fn provide_api_fork_selector(&self, fork_selector: String) {
+        (self.send_pvpn_message)(PvpnMessage::ProvideApiForkSelector(fork_selector))
     }
 }
 
@@ -136,6 +161,13 @@ pub enum ConnectionMode {
     /// will be emitted as soon as WG connection is ready.
     NoLocalAgent {
         wg_private_key: WgClientPrivateKey
+    },
+
+    #[cfg(feature = "local-agent")]
+    LocalAgent {
+        user_agent: String,
+        app_version: String,
+        settings: LocalAgentSettings,
     },
 }
 
@@ -165,6 +197,24 @@ where
     fn on_state_changed(&self, state: VpnState) {
         self(state);
     }
+}
+
+/// Persistent cache. Libpvpnclient will use it to store secrets (certificates, private keys, etc.).
+/// Data is sensitive and implementation should make sure it's stored securely. Note that all
+/// functions in this trait will be blocking the connection thread.
+#[cfg_attr(feature = "uniffi", uniffi::export(callback_interface))]
+pub trait PersistentCache: Send + Sync {
+    fn put(&self, key: CacheKey, bytes: Vec<u8>);
+    fn get(&self, key: CacheKey) -> Option<Vec<u8>>;
+    fn clear(&self);
+}
+
+#[cfg_attr(feature = "uniffi", derive(uniffi::Enum))]
+#[derive(Debug, Hash, PartialEq, Eq)]
+pub enum CacheKey {
+    Certificate,
+    PrivateKey,
+    ApiSession,
 }
 
 /// Callback interface for receiving events. Avoid doing heavy work in the callback to avoid
@@ -197,6 +247,9 @@ pub struct PeerInfo {
     pub tcp_ports: Vec<u16>,
     pub tls_ports: Vec<u16>,
     pub priority: i32,
+
+    #[cfg(feature = "local-agent")]
+    pub exit_label: Option<String>
 }
 
 #[cfg_attr(feature = "uniffi", derive(uniffi::Record))]

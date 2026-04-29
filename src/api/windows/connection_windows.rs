@@ -21,7 +21,7 @@ use std::net::IpAddr;
 use std::sync::Arc;
 use pvpnclient::os_interface::rand::CryptoSeedProvider;
 
-use crate::api::connection::{EventCallback, IpAddress};
+use crate::api::connection::{EventCallback, IpAddress, PersistentCache};
 use crate::api::windows::protun_error::ProTunFatalError;
 use crate::api::windows::state_changed_callback::WindowsStateChangedCallback;
 use crate::connection::pvpn_client::PvpnClientImpl;
@@ -118,7 +118,8 @@ impl WindowsConnection {
         connection_config: InitialConnectionConfig,
         network_config: NetworkConfig,
         client_state_change_callback: Box<dyn StateChangedCallback>,
-        event_callback: Box<dyn EventCallback>
+        event_callback: Box<dyn EventCallback>,
+        cache: Box<dyn PersistentCache>,
     ) -> Result<Self, ProTunFatalError> {
         let server_ips: Vec<IpAddr> = connection_config.peers.iter().map(|peer| peer.server_ip.0).collect();
         let tun: Arc<WinTunSession> = Arc::new(WinTunSession::create(server_ips, network_config.tun_adapter)?);
@@ -137,6 +138,7 @@ impl WindowsConnection {
                     tun_clone,
                     state_change_callback,
                     event_callback,
+                    cache,
                 )
             }
         ));
@@ -194,6 +196,7 @@ fn create_pvpn_dependencies(
     tun: Arc<WinTunSession>,
     state_change_callback: Box<dyn StateChangedCallback>,
     event_callback: Box<dyn EventCallback>,
+    cache: Box<dyn PersistentCache>,
 ) -> Result<PvpnDependencies, io::Error> {
     let tun_stream: Box<TunStreamWindows> = Box::new(TunStreamWindows::new(tun)
         .map_err(|e| Error::new(ErrorKind::Other, format!("Failed to create streams: {e}")))?);
@@ -203,7 +206,7 @@ fn create_pvpn_dependencies(
         PvpnClientImpl::new(
             ClientMonotonicFactory::new(),
             ClientRealtimeFactory::new(),
-            config.connection_mode.to_pvpn_client_mode()?,
+            config.connection_mode.to_pvpn_client_mode(&cache)?,
             || CryptoSeedProvider::new(rand::rng()).into()
         )?
     );
@@ -215,6 +218,7 @@ fn create_pvpn_dependencies(
             client,
             state_change_callback,
             event_callback,
+            cache,
         }
     )
 }

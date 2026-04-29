@@ -19,12 +19,14 @@ use std::{io, net::IpAddr, str::FromStr};
 
 use pvpnclient::{stats::TunnelStats, vpn::{WireguardPrivateKey, WireguardPublicKey}};
 
-use crate::api::connection::{CLIENT_PRIV_KEY_SIZE_BYTES, IpAddress, PEER_PUB_KEY_SIZE_BYTES, WgClientPrivateKey, WgPeerPublicKey, ConnectionMode};
+use crate::api::connection::{CLIENT_PRIV_KEY_SIZE_BYTES, IpAddress, PEER_PUB_KEY_SIZE_BYTES, WgClientPrivateKey, WgPeerPublicKey, ConnectionMode, CacheKey, PersistentCache};
 use crate::api::events::Event;
 use crate::connection::pvpn_client::PvpnClientMode;
 
 #[cfg(feature = "local-agent")]
-use crate::api::local_agent::NetshieldLevel;
+use crate::api::local_agent::{LocalAgentSettings, NetshieldLevel};
+#[cfg(feature = "local-agent")]
+use pvpnclient::{Ed25519PrivateKey, LocalAgentCertificate, MuonAuth, SessionSettings};
 
 #[cfg(feature = "uniffi")]
 uniffi::custom_type!(WgClientPrivateKey, Vec<u8>);
@@ -114,6 +116,20 @@ impl From<TunnelStats> for Event {
 }
 
 #[cfg(feature = "local-agent")]
+impl From<LocalAgentSettings> for SessionSettings {
+    fn from(value: LocalAgentSettings) -> Self {
+        SessionSettings {
+            split_tcp: value.split_tcp,
+            netshield_level: value.netshield_level.map(Into::into),
+            softjail: value.soft_jail,
+            port_forwarding: value.port_forwarding,
+            random_nat: value.random_nat,
+            circumvention_routing: value.circumvention_routing,
+        }
+    }
+}
+
+#[cfg(feature = "local-agent")]
 impl From<NetshieldLevel> for pvpnclient::NetshieldLevel {
     fn from(value: NetshieldLevel) -> Self {
         match value {
@@ -137,11 +153,54 @@ impl From<pvpnclient::NetshieldLevel> for NetshieldLevel {
 
 impl ConnectionMode {
 
-    pub(crate) fn to_pvpn_client_mode(self: &ConnectionMode) -> Result<PvpnClientMode, io::Error> {
-        match self {
-            ConnectionMode::NoLocalAgent { wg_private_key } => Ok(PvpnClientMode::NoLocalAgent {
+    pub(crate) fn to_pvpn_client_mode(self: &ConnectionMode, cache: &Box<dyn PersistentCache>) -> Result<PvpnClientMode, io::Error> {
+        Ok(match self {
+            ConnectionMode::NoLocalAgent { wg_private_key } => PvpnClientMode::NoLocalAgent {
                 wg_private_key: wg_private_key.clone().into(),
-            }),
-        }
+            },
+
+            #[cfg(feature = "local-agent")]
+            ConnectionMode::LocalAgent {
+                settings: _local_agent_settings,
+                app_version,
+                user_agent
+            } => PvpnClientMode::LocalAgent {
+                app_version: app_version.clone(),
+                user_agent: user_agent.clone(),
+                private_key: cache.get(CacheKey::PrivateKey).map(to_private_key).transpose()?,
+                certificate: cache.get(CacheKey::Certificate).map(to_certificate).transpose()?,
+                muon_auth: cache.get(CacheKey::ApiSession).map(to_muon_auth).transpose()?,
+            }
+        })
+    }
+}
+
+#[cfg(feature = "local-agent")]
+fn to_certificate(data: Vec<u8>) -> Result<LocalAgentCertificate, io::Error> {
+    let result = LocalAgentCertificate::from_pem(&data);
+    match result {
+        Ok(cert) => Ok(cert),
+        Err(e) =>
+            Err(io::Error::new(io::ErrorKind::InvalidData, format!("Failed to parse certificate: {e:?}"))),
+    }
+}
+
+#[cfg(feature = "local-agent")]
+fn to_private_key(data: Vec<u8>) -> Result<Ed25519PrivateKey, io::Error> {
+    let result = Ed25519PrivateKey::from_pem(&data);
+    match result {
+        Ok(key) => Ok(key),
+        Err(e) =>
+            Err(io::Error::new(io::ErrorKind::InvalidData, format!("Failed to parse private key: {e:?}"))),
+    }
+}
+
+#[cfg(feature = "local-agent")]
+fn to_muon_auth(data: Vec<u8>) -> Result<MuonAuth, io::Error> {
+    let result = MuonAuth::try_from(data.as_slice());
+    match result {
+        Ok(key) => Ok(key),
+        Err(e) =>
+            Err(io::Error::new(io::ErrorKind::InvalidData, format!("Failed to parse muon auth: {e:?}"))),
     }
 }

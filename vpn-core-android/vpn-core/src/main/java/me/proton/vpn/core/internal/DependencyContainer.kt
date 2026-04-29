@@ -32,6 +32,7 @@ import me.proton.vpn.core.service.usecases.NetworkObserver
 import me.proton.vpn.core.service.usecases.NetworkObserverImpl
 import uniffi.protun.ClientLogger
 import uniffi.protun.LogLevel
+import uniffi.protun.PersistentCache
 import uniffi.protun.initLogger
 
 fun interface WallClockMs {
@@ -51,6 +52,7 @@ internal object DependencyContainer {
     private var _appContext: Context? = null
     private var _wallClockMs: WallClockMs? = null
     private var _nativeLogLevel: LogLevel? = null
+    private var _cache: PersistentCache? = null
 
     // Use lazy field to get synchronized initialization of native logger.
     private val nativeLogger by lazy {
@@ -69,7 +71,8 @@ internal object DependencyContainer {
         notificationFactory: ForegroundServiceNotificationFactory,
         systemEventHandler: SystemEventHandler,
         wallClockMs: WallClockMs = WallClockMs { System.currentTimeMillis() },
-        nativeLogLevel: LogLevel?
+        nativeLogLevel: LogLevel?,
+        cache: PersistentCache? = null,
     ) {
         _appContext = context.applicationContext
         _logger = logger
@@ -77,6 +80,7 @@ internal object DependencyContainer {
         _systemEventHandler = systemEventHandler
         _wallClockMs = wallClockMs
         _nativeLogLevel = nativeLogLevel
+        _cache = cache
     }
 
     fun ensureNativeLogInitialized() {
@@ -110,7 +114,8 @@ internal object DependencyContainer {
             networkObserver = networkObserver,
             establishTun = establishTun,
             wallClockMs = wallClockMs,
-            logger = logger
+            logger = logger,
+            cache = cache,
         )
     }
 
@@ -128,5 +133,8 @@ internal object DependencyContainer {
 
     val wallClockMs: WallClockMs get() =
         _wallClockMs ?: error("DependencyContainer not initialized. Call ProtonVpnCore.create() first.")
+
+    val cache: PersistentCache get() =
+        _cache ?: error("DependencyContainer not initialized. Call ProtonVpnCore.create() first.")
 }
 

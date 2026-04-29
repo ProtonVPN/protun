@@ -39,3 +39,6 @@ pub(crate) type CreateTunStream = Box<dyn FnOnce () -> Option<Box<dyn MioStream>
 
 #[cfg(feature = "windows")]
 pub(crate) mod windows;
+
+#[cfg(feature = "local-agent")]
+pub mod local_agent_handler;

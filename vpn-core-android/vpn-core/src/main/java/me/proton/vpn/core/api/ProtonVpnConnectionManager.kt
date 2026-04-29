@@ -62,8 +62,16 @@ interface ProtonVpnConnectionManager {
     val events: Flow<VpnConnectionEvent>
     val connectionStats: Flow<ConnectionStats>
 
+    /**
+     * Stream of local-agent stats. Active only while a [ConnectionMode.LocalAgent] connection is
+     * established; emits roughly once per second.
+     */
+    val localAgentStats: Flow<LocalAgentStats>
+
     fun connect(config: InitialConfig)
     fun updateInterfaceConfig(interfaceConfig: InterfaceConfig)
+    fun updateLocalAgentSettings(localAgentSettings: LocalAgentSettings)
+    fun updateApiSelector(selector: String)
     fun updatePeers(peers: List<Peer>)
 
     /**
@@ -106,6 +114,12 @@ sealed interface ConnectionMode: Parcelable {
 
     data class NoLocalAgent(
         val clientX25519PrivateKeyBase64: String,
+    ) : ConnectionMode
+
+    data class LocalAgent(
+        val userAgent: String,
+        val appVersion: String,
+        val settings: LocalAgentSettings,
     ) : ConnectionMode
 }
 
@@ -151,3 +165,21 @@ data class LocalAgentSettings(
 enum class NetShieldLevel {
     None, MalwareFilter, AdsAndMalwareFilter
 }
+
+/**
+ * Local-agent traffic / NetShield stats. Will be emitted in
+ * [ProtonVpnConnectionManager.localAgentStats] roughly once per second while a local-agent
+ * connection is established. Fields are independently nullable: a null value means the server
+ * did not report that counter for the current snapshot.
+ */
+@Parcelize
+data class LocalAgentStats(
+    val bytesReceived: ULong?,
+    val bytesSent: ULong?,
+    val maliciousBlocked: ULong?,
+    val adsBlocked: ULong?,
+    val trackersBlocked: ULong?,
+    val adultContentBlocked: ULong?,
+    /** Estimated bandwidth saved by NetShield blocks, in bytes. */
+    val dataSaved: ULong?,
+) : Parcelable

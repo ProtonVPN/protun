@@ -19,7 +19,7 @@ use std::{io, net::SocketAddr, sync::mpsc, thread::{self, JoinHandle}};
 use std::cmp::min;
 use std::io::ErrorKind;
 use std::time::Duration;
-use pvpnclient::{Action, ActionKind, StreamId, TunnelInfo};
+use pvpnclient::{Action, ActionKind, Settings, StreamId, TunnelInfo};
 use pvpnclient::action::OpenStream;
 use pvpnclient::peer::Peer;
 use pvpnclient::vpn::{VpnProtocol, VpnStreamKind};
@@ -34,11 +34,19 @@ use crate::{
     },
     connection::{pvpn_client::PvpnClient, streams::{PendingWrite, PollResult, PollWaker, StreamResult, Streams, WouldBlock}},
 };
-use crate::api::connection::{ConnectivityEvent, EventCallback, PcapFileInfo, StateChangedCallback, IpAddress};
+use crate::api::connection::{PersistentCache, ConnectionMode, ConnectivityEvent, EventCallback, PcapFileInfo, StateChangedCallback, IpAddress, CacheKey};
 use crate::api::events::{CaptureStopReason, Event};
 use crate::api::state::{ConnectionState, PeerConnectionWaitReason, VpnState};
 use crate::connection::network_recovery_handler::NetworkRecoveryHandler;
 use crate::connection::pcap_stream::PcapStream;
+
+#[cfg(feature = "local-agent")]
+use crate::{
+    api::local_agent::LocalAgentSettings,
+    connection::local_agent_handler::LocalAgentHandler,
+};
+#[cfg(feature = "local-agent")]
+use pvpnclient::{LocalAgentAction, LocalAgentSelector, SessionSettings};
 
 pub(crate) struct PvpnDependencies {
     pub config: InitialConnectionConfig,
@@ -46,6 +54,7 @@ pub(crate) struct PvpnDependencies {
     pub client: Box<dyn PvpnClient>,
     pub state_change_callback: Box<dyn StateChangedCallback>,
     pub event_callback: Box<dyn EventCallback>,
+    pub cache: Box<dyn PersistentCache>,
 }
 
 /// Messages that can be sent to the connection loop.
@@ -59,6 +68,13 @@ pub(crate) enum PvpnMessage {
     StartPacketCapture(PcapFileInfo),
     StopPacketCapture,
     RequestStats,
+
+    #[cfg(feature = "local-agent")]
+    UpdateLocalAgentSettings(LocalAgentSettings),
+    #[cfg(feature = "local-agent")]
+    ProvideApiForkSelector(String),
+    #[cfg(feature = "local-agent")]
+    RequestLocalAgentStats,
 }
 
 pub(crate) type SendPvpnMessage = Box<dyn Fn(PvpnMessage) -> () + Send + Sync>;
@@ -74,19 +90,26 @@ pub(crate) fn start_pvpn_connection(
 ) -> (SendPvpnMessage, JoinHandle<()>) {
     let (message_sender, message_receiver) = mpsc::channel();
     let join_handle = thread::spawn(move || {
-        match create_pvpn_dependencies() {
+        let dependencies = create_pvpn_dependencies();
+        match dependencies {
             Ok(deps) => {
                 let mut connection = PvpnConnection::new(
                     deps.client,
                     deps.streams,
+                    deps.cache,
                     deps.state_change_callback,
                     deps.event_callback,
                     message_receiver,
                     deps.config.network_available,
                     deps.config.peers,
                     deps.config.pcap_file,
+                    #[cfg(feature = "local-agent")]
+                    match deps.config.connection_mode {
+                        ConnectionMode::NoLocalAgent { .. } => None,
+                        ConnectionMode::LocalAgent { settings: local_agent_settings, .. } => Some(local_agent_settings),
+                    },
                 );
-                connection.run();
+                connection.run()
             },
             Err(err) => log::error!("failed to create connection: {err}"),
         }
@@ -115,18 +138,29 @@ struct PvpnConnection {
     current_tun_error: Option<String>,
     network_recovery_handler: NetworkRecoveryHandler,
     pcap_stream: Option<PcapStream>,
+    cache: Box<dyn PersistentCache>,
+    #[cfg(feature = "local-agent")]
+    local_agent_handler: Option<LocalAgentHandler>,
 }
 impl PvpnConnection {
     fn new(
         client: Box<dyn PvpnClient>,
         streams: Box<dyn Streams>,
+        cache: Box<dyn PersistentCache>,
         state_change_callback: Box<dyn StateChangedCallback>,
         event_callback: Box<dyn EventCallback>,
         message_receiver: mpsc::Receiver<PvpnMessage>,
         network_available: bool,
         peers: Vec<PeerInfo>,
         pcap_file_info: Option<PcapFileInfo>,
+        #[cfg(feature = "local-agent")]
+        local_agent_settings: Option<LocalAgentSettings>,
     ) -> Self {
+        #[cfg(feature = "local-agent")]
+        let local_agent_handler = match local_agent_settings {
+            None => None,
+            Some(_) => Some(LocalAgentHandler::new()),
+        };
         let mut ret = Self {
             client,
             streams,
@@ -140,6 +174,9 @@ impl PvpnConnection {
             current_tun_error: None,
             network_recovery_handler: NetworkRecoveryHandler::new(network_available),
             pcap_stream: None,
+            cache,
+            #[cfg(feature = "local-agent")]
+            local_agent_handler,
         };
         ret.activate_peers();
         if !ret.network_recovery_handler.is_network_available() {
@@ -152,6 +189,13 @@ impl PvpnConnection {
         }
         if let Some(pcap_file_info) = pcap_file_info {
             ret.start_packet_capture(pcap_file_info);
+        }
+        #[cfg(feature = "local-agent")]
+        if let Some(local_agent_settings) = local_agent_settings {
+            for selector in LocalAgentHandler::local_agent_selectors_to_watch() {
+                ret.client.push_local_agent(LocalAgentAction::Watch(selector));
+            }
+            ret.client.set_settings(pvpn_settings(local_agent_settings.into()));
         }
         ret
     }
@@ -220,6 +264,19 @@ impl PvpnConnection {
                         self.emit_event(stats.into());
                     }
                 }
+                #[cfg(feature = "local-agent")]
+                PvpnMessage::UpdateLocalAgentSettings(session_settings) => {
+                    self.client.set_settings(pvpn_settings(session_settings.into()));
+                }
+                #[cfg(feature = "local-agent")]
+                PvpnMessage::ProvideApiForkSelector(fork_selector) => {
+                    self.client
+                        .push_local_agent(LocalAgentAction::ProvideAuthForkSelector(fork_selector));
+                }
+                #[cfg(feature = "local-agent")]
+                PvpnMessage::RequestLocalAgentStats => {
+                    self.client.push_local_agent(LocalAgentAction::Get(LocalAgentSelector::Stats));
+                }
             }
         }
         !self.should_stop
@@ -284,6 +341,18 @@ impl PvpnConnection {
                     ActionKind::Done => {
                         log::error!("Unexpected action pulled from libpvpnclient: {:?}", kind);
                         debug_assert!(false, "Unexpected action pulled from libpvpnclient: {:?}", kind);
+                    }
+                }
+            }
+        }
+        #[cfg(feature = "local-agent")]
+        // Don't pull local agent if not in local-agent mode.
+        if let Some(_) = &mut self.local_agent_handler {
+            while let Some(local_agent_message) = self.client.pull_local_agent() {
+                if let Some(handler) = &mut self.local_agent_handler {
+                    let event = handler.handle_message(local_agent_message);
+                    if let Some(event) = event {
+                        self.emit_event(event);
                     }
                 }
             }
@@ -418,6 +487,16 @@ impl PvpnConnection {
                     log::error!("write to pcap stream but pcap capture is not started");
                 }
             }
+
+            StreamId::PRIVKEY_STREAM_ID =>
+                self.cache.put(CacheKey::PrivateKey, data),
+
+            StreamId::CERT_STREAM_ID =>
+                self.cache.put(CacheKey::Certificate, data),
+
+            StreamId::MUON_AUTH_STREAM_ID =>
+                self.cache.put(CacheKey::ApiSession, data),
+
             _ => {
                 if let Some(stream) = self.streams.get_stream(stream_id) {
                     let write_result = stream.write(data);
@@ -508,11 +587,17 @@ impl PvpnConnection {
         }
         match tunnel_info {
             Some(TunnelInfo::Connected { protocol, peer_addr, peer, .. }) => {
-                ConnectionState::Connected {
-                    peer: get_peer_connection_info(&peer, &peer_addr, *protocol),
-                    #[cfg(feature = "local-agent")]
-                    agent_info: None,
-                }
+                let info = get_peer_connection_info(&peer, &peer_addr, *protocol);
+                #[cfg(feature = "local-agent")]
+                let state = if let Some(handler) = &mut self.local_agent_handler {
+                    handler.on_connected_to_peer(&info);
+                    handler.get_state(info)
+                } else {
+                    ConnectionState::Connected { peer: info, agent_info: None }
+                };
+                #[cfg(not(feature = "local-agent"))]
+                let state = ConnectionState::Connected { peer: info };
+                state
             }
             Some(TunnelInfo::Connecting { protocol, peer_addr, peer, .. }) => {
                 ConnectionState::Connecting {
@@ -575,5 +660,14 @@ impl From<VpnProtocol> for Protocol {
             VpnProtocol::WireguardTcp => Protocol::WireguardTcp,
             VpnProtocol::Stealth => Protocol::Stealth,
         }
+    }
+}
+
+#[cfg(feature = "local-agent")]
+fn pvpn_settings(session_settings: SessionSettings) -> Settings {
+    Settings {
+        authorized_protocols: vec![VpnProtocol::WireguardUdp, VpnProtocol::WireguardTcp, VpnProtocol::Stealth],
+        tls_snis: Default::default(),
+        session_settings,
     }
 }

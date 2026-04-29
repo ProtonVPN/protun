@@ -26,8 +26,10 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.launchIn
 import kotlinx.coroutines.flow.onEach
 import kotlinx.coroutines.launch
+import me.proton.vpn.core.api.ConnectionMode
 import me.proton.vpn.core.api.InitialConfig
 import me.proton.vpn.core.api.InterfaceConfig
+import me.proton.vpn.core.api.LocalAgentSettings
 import me.proton.vpn.core.api.Logger
 import me.proton.vpn.core.api.PacketCaptureInfo
 import me.proton.vpn.core.api.Peer
@@ -45,6 +47,7 @@ import uniffi.protun.ConnectivityEvent
 import uniffi.protun.EventCallback
 import uniffi.protun.InitialConnectionConfig
 import uniffi.protun.LogLevel
+import uniffi.protun.PersistentCache
 import uniffi.protun.StateChangedCallback
 import java.lang.ref.WeakReference
 import java.util.Date
@@ -53,8 +56,8 @@ internal class ConnectionManager(
     private val networkObserver: NetworkObserver,
     private val establishTun: EstablishTun,
     private val wallClockMs: WallClockMs,
-    private val logger: Logger
-
+    private val logger: Logger,
+    private val cache: PersistentCache,
 ) {
     data class ActiveConnection(
         val connection: Connection,
@@ -75,7 +78,7 @@ internal class ConnectionManager(
     var activeConnection: ActiveConnection? = null
         private set
 
-    val state = MutableStateFlow(VpnState.Default)
+    val state = MutableStateFlow(VpnState.Disconnected)
 
     fun init(serviceScope: CoroutineScope) {
         this.serviceScope = serviceScope
@@ -123,7 +126,8 @@ internal class ConnectionManager(
                     tunFd = tunFd.detachFd(),
                     stateChangeCallback = stateChangeCallback,
                     socketFdAvailableCallback = socketProtectCallback,
-                    eventCallback = eventCallback
+                    eventCallback = eventCallback,
+                    cache = cache,
                 )
                 activeConnection = ActiveConnection(
                     connection = nativeConnection,
@@ -132,6 +136,7 @@ internal class ConnectionManager(
                     startedAt = Date(wallClockMs()),
                 )
             }
+
             is EstablishTun.Result.Failure -> {
                 state.value = VpnState.disconnectedWith(establishResult.reason)
             }
@@ -151,6 +156,7 @@ internal class ConnectionManager(
                 is EstablishTun.Result.Failure -> {
                     clearConnection(VpnConnectionState.Disconnected(establishResult.reason))
                 }
+
                 is EstablishTun.Result.Success -> {
                     val newTunFd = establishResult.fd
                     logger.log(LogLevel.INFO, "pvpn: Re-established VPN interface ${newTunFd.fd}")
@@ -164,6 +170,14 @@ internal class ConnectionManager(
         activeConnection?.connection?.updatePeers(peers.toUniFFI())
     }
 
+    fun updateLocalAgentSettings(settings: LocalAgentSettings) {
+        activeConnection?.connection?.updateLocalAgentSettings(settings.toUniFFI())
+    }
+
+    fun provideApiForkSelector(selector: String) {
+        activeConnection?.connection?.provideApiForkSelector(selector)
+    }
+
     fun setPacketCaptureEnabled(packetCaptureInfo: PacketCaptureInfo?) {
         if (packetCaptureInfo == null)
             activeConnection?.connection?.stopPacketCapture()
@@ -171,8 +185,12 @@ internal class ConnectionManager(
             activeConnection?.connection?.startPacketCapture(packetCaptureInfo.toUniFFI())
     }
 
+    fun requestLocalAgentStats() {
+        activeConnection?.connection?.requestLocalAgentStats()
+    }
+
     fun requestConnectionStats() {
-        activeConnection?.connection?.getStats()
+        activeConnection?.connection?.requestStats()
     }
 
     fun onProTunStateChange(proTunState: uniffi.protun.VpnState) {
@@ -188,10 +206,15 @@ internal class ConnectionManager(
                         connectionState.waitReasons.mapNotNull { handleConnectionWaitReason(it) },
                     )
 
+                    is ConnectionState.ConnectingToLocalAgent -> VpnConnectionState.ConnectingToLocalAgent(
+                        connectionState.peer.toCoreApi(),
+                        connectionState.waitReason?.toCoreApi(),
+                    )
+
                     is ConnectionState.Connected -> VpnConnectionState.Connected(
                         connectionState.peer.toCoreApi(),
                         connectedSince = activeConnection.startedAt,
-                        agentConnectionInfo = null,
+                        agentConnectionInfo = connectionState.agentInfo?.toCoreApi()
                     )
                 }
                 state.value = VpnState(proTunState.interfaceState.isUp, connectionState)

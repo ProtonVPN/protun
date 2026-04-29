@@ -19,6 +19,7 @@
 
 package me.proton.vpn.core.sample_app.data
 
+import kotlinx.serialization.Serializable
 import me.proton.vpn.core.api.ConnectionMode
 import me.proton.vpn.core.api.InitialConfig
 import me.proton.vpn.core.api.InterfaceConfig
@@ -61,8 +62,25 @@ data class VpnConfig(
                     publicKeyX25519Base64 = peerPublicKey,
                     priority = 0,
                     ports = ports,
+                    exitLabel = null,
                 )
             ),
+            mode = if (localAgentMode) {
+                ConnectionMode.LocalAgent(
+                    userAgent = "ProtonVPN/5.17.62.8 (Android 14; google sdk_gphone64_x86_64)",
+                    appVersion = "android-vpn@5.17.62.0",
+                    settings = LocalAgentSettings(
+                        splitTcp = true,
+                        netshieldLevel = NetShieldLevel.AdsAndMalwareFilter,
+                        softJail = false,
+                        portForwarding = null,
+                        randomNat = null,
+                        circumventionRouting = null,
+                    )
+                )
+            } else {
+                ConnectionMode.NoLocalAgent(clientX25519PrivateKeyBase64 = clientPrivateKey)
+            },
         )
     }
 }

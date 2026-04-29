@@ -51,13 +51,22 @@ impl PeerInfo {
 
     pub(crate) fn as_peer(&self) -> Peer {
         let peer_addr = self.addr();
-        Peer::builder(peer_addr, self.server_public_key.clone().into())
+        let builder = Peer::builder(peer_addr, self.server_public_key.clone().into())
             .with_tag(&self.peer_id)
             .udp_ports(&Self::to_non_zero_vec(&self.udp_ports))
             .tcp_ports(&Self::to_non_zero_vec(&self.tcp_ports))
             .tls_ports(&Self::to_non_zero_vec(&self.tls_ports))
-            .priority(self.priority as i16)
-            .build()
+            .priority(self.priority as i16);
+        #[cfg(feature = "local-agent")]
+        if let Some(label) = &self.exit_label {
+            builder
+                .with_bouncing_labels(vec![label.clone()])
+                .build()
+        } else {
+            builder.build()
+        }
+        #[cfg(not(feature = "local-agent"))]
+        builder.build()
     }
 
     fn to_non_zero_vec(ports: &Vec<u16>) -> Vec<NonZeroU16> {

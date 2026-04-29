@@ -23,6 +23,7 @@ import android.content.Context
 import kotlinx.coroutines.MainScope
 import me.proton.vpn.core.ProtonVpnConnectionManagerImpl
 import me.proton.vpn.core.internal.DependencyContainer
+import me.proton.vpn.core.internal.PersistentCacheImpl
 import uniffi.protun.LogLevel
 
 /**
@@ -54,6 +55,8 @@ class ProtonVpnCore private constructor(
          *
          * @param context Application context
          * @param logger Logger implementation
+         * @param persistentCacheCipher Optional cipher for storing auth secrets. If not provided,
+         *    plaintext storage will be used.
          * @param includeNativeLogs Whether to include logs from the rust layer. Set it to false if
          *    you already handle rust `log::set_logger` in the app.
          * @param nativeLogLevel Minimum log level for native logs
@@ -66,6 +69,7 @@ class ProtonVpnCore private constructor(
         fun create(
             context: Context,
             logger: Logger,
+            persistentCacheCipher: PersistentCacheCipher?,
             includeNativeLogs: Boolean = true,
             nativeLogLevel: LogLevel = LogLevel.INFO,
             initDependencies: (ProtonVpnCore) -> Dependencies,
@@ -86,6 +90,7 @@ class ProtonVpnCore private constructor(
                 notificationFactory = dependencies.notificationFactory,
                 systemEventHandler = dependencies.systemEventHandler,
                 nativeLogLevel = nativeLogLevel.takeIf { includeNativeLogs },
+                cache = PersistentCacheImpl(persistentCacheCipher, logger, appContext),
             )
 
             return vpn
@@ -103,3 +108,12 @@ class Dependencies(
     val notificationFactory: ForegroundServiceNotificationFactory,
     val systemEventHandler: SystemEventHandler
 )
+
+/**
+ * Interface for encrypting/decrypting cached auth secrets. Will be used on a background thread
+ * where blocking IO is allowed.
+ */
+interface PersistentCacheCipher {
+    fun encrypt(data: ByteArray): Result<ByteArray>
+    fun decrypt(data: ByteArray): Result<ByteArray>
+}

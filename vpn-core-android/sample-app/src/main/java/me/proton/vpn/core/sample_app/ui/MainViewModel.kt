@@ -22,6 +22,8 @@ package me.proton.vpn.core.sample_app.ui
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import dagger.hilt.android.lifecycle.HiltViewModel
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.async
 import kotlinx.coroutines.channels.BufferOverflow
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.SharingStarted
@@ -36,6 +38,8 @@ import me.proton.vpn.core.api.VpnConnectionEvent
 import me.proton.vpn.core.api.VpnConnectionState
 import me.proton.vpn.core.sample_app.data.ConfigStore
 import me.proton.vpn.core.sample_app.data.VpnConfig
+import me.proton.vpn.core.sample_app.ui.Event.ShowMessage
+import uniffi.protun.getSessionForkSelector
 import javax.inject.Inject
 
 @HiltViewModel

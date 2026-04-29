@@ -36,7 +36,7 @@ data class VpnState(
             connectionState = VpnConnectionState.Disconnected(error)
         )
 
-        val Default = VpnState(interfaceUp = false, VpnConnectionState.Disconnected())
+        val Disconnected = VpnState(interfaceUp = false, VpnConnectionState.Disconnected())
     }
 }
 
@@ -126,6 +126,9 @@ sealed interface WaitJailReason : Parcelable {
     data class LowPlan(val message: String) : WaitJailReason
     data class PendingInvoice(val message: String) : WaitJailReason
     data class SessionOverLimit(val message: String) : WaitJailReason
+
+    // Will be handled internally by the library - no action required by the app.
+    data class Internal(val message: String) : WaitJailReason
 
     // Unknown error codes, not supported in this version.
     data class Other(val code: ULong, val message: String) : WaitJailReason

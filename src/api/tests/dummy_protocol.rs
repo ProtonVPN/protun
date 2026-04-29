@@ -16,7 +16,9 @@
 // along with ProtonVPN.  If not, see <https://www.gnu.org/licenses/>.
 
 use std::{collections::VecDeque, net::SocketAddr, num::NonZero, time::Duration};
-use pvpnclient::{Action, ActionKind, Deadline, StreamId, TunnelInfo};
+use pvpnclient::{Action, ActionKind, Deadline, Settings, StreamId, TunnelInfo};
+#[cfg(feature = "local-agent")]
+use pvpnclient::{LocalAgentAction, LocalAgentMessage};
 use pvpnclient::action::OpenStream;
 use pvpnclient::os_interface::time::{FromDuration, Instant, SinceUnixEpoch, SystemTime};
 use pvpnclient::peer::{Peer, PeerAddr};
@@ -314,6 +316,20 @@ impl PvpnClient for DummyPvpnClient {
     fn set_packet_capture_enabled(&mut self, _enabled: bool) -> CaptureId {
         // not supported in tests
         StreamId::PCAP_STREAM_ID
+    }
+
+    fn set_settings(&mut self, _settings: Settings) {
+        todo!()
+    }
+
+    #[cfg(feature = "local-agent")]
+    fn pull_local_agent(&mut self) -> Option<LocalAgentMessage> {
+        todo!()
+    }
+
+    #[cfg(feature = "local-agent")]
+    fn push_local_agent(&mut self, _action: LocalAgentAction) {
+        todo!()
     }
 }
 

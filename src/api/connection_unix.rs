@@ -15,6 +15,7 @@
 // You should have received a copy of the GNU General Public License
 // along with ProtonVPN.  If not, see <https://www.gnu.org/licenses/>.
 
+use crate::api::connection::PersistentCache;
 use crate::connection::mio::streams::MioStream;
 use crate::connection::pvpn_connection::PvpnDependencies;
 use crate::connection::time::{ClientMonotonicFactory, ClientRealtimeFactory};
@@ -44,6 +45,7 @@ impl Connection {
         state_change_callback: Box<dyn StateChangedCallback>,
         event_callback: Box<dyn EventCallback>,
         socket_fd_available_callback: Option<Box<dyn OnSocketFdAvailableCallback>>,
+        cache: Box<dyn PersistentCache>,
     ) -> Self {
         let (poll, waker) = MioStreams::create_mio_poll_with_waker().expect("Failed to create mio poll");
         Self::connect_internal(
@@ -56,6 +58,7 @@ impl Connection {
                     state_change_callback,
                     socket_fd_available_callback,
                     event_callback,
+                    cache,
                 )
             }
         )
@@ -100,6 +103,7 @@ fn create_pvpn_dependencies(
     state_change_callback: Box<dyn StateChangedCallback>,
     socket_fd_available_callback: Option<Box<dyn OnSocketFdAvailableCallback>>,
     event_callback: Box<dyn EventCallback>,
+    cache: Box<dyn PersistentCache>,
 ) -> Result<PvpnDependencies, io::Error> {
     let socket_factory =
         Box::new(SocketFactoryUnix::new(socket_fd_available_callback));
@@ -116,7 +120,7 @@ fn create_pvpn_dependencies(
     let pvpn_client = PvpnClientImpl::new(
         ClientMonotonicFactory::new(),
         ClientRealtimeFactory::new(),
-        config.connection_mode.to_pvpn_client_mode()?,
+        config.connection_mode.to_pvpn_client_mode(&cache)?,
         || CryptoSeedProvider::new(rand::rng()).into()
     )?;
 
@@ -127,6 +131,7 @@ fn create_pvpn_dependencies(
             client: Box::new(pvpn_client),
             state_change_callback,
             event_callback,
+            cache,
         }
     )
 }

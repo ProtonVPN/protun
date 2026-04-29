@@ -76,10 +76,11 @@ pub enum WaitJailReason {
     LowPlan { message: String },
     Need2FA { message: String },
     PendingInvoice { message: String },
-    RestrictedServer { message: String },
     SessionOverLimit { message: String },
-    SystemError { message: String },
     WaitingClientChallengeReply { message: String },
+    
+    /// Will be handled internally by the library - no action required by the app.
+    Internal { message: String },
 
     /// Unknown error codes, not supported in this version.
     Other { code: u64, message: String },

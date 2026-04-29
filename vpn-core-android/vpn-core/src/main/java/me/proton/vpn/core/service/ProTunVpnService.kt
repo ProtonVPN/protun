@@ -37,6 +37,7 @@ import kotlinx.parcelize.Parcelize
 import me.proton.vpn.core.api.ForegroundServiceNotificationFactory
 import me.proton.vpn.core.api.InitialConfig
 import me.proton.vpn.core.api.InterfaceConfig
+import me.proton.vpn.core.api.LocalAgentSettings
 import me.proton.vpn.core.api.Logger
 import me.proton.vpn.core.api.PacketCaptureInfo
 import me.proton.vpn.core.api.Peer
@@ -152,6 +153,15 @@ internal class ProTunVpnService : VpnService() {
 
                                 VpnAction.Update.RequestConnectionStats ->
                                     manager.requestConnectionStats()
+
+                                VpnAction.Update.RequestLocalAgentStats ->
+                                    manager.requestLocalAgentStats()
+
+                                is VpnAction.Update.Settings ->
+                                    manager.updateLocalAgentSettings(vpnAction.settings)
+
+                                is VpnAction.Update.ApiSelector ->
+                                    manager.provideApiForkSelector(vpnAction.selector)
                             }
                             true
                         } else {
@@ -209,7 +219,10 @@ internal class ProTunVpnService : VpnService() {
             @Parcelize data class Interface(val interfaceConfig: InterfaceConfig) : Update
             @Parcelize data class Peers(val peers: List<Peer>) : Update
             @Parcelize data class PacketCapture(val packetCaptureInfo: PacketCaptureInfo?) : Update
+            @Parcelize data class Settings(val settings: LocalAgentSettings) : Update
+            @Parcelize data class ApiSelector(val selector: String) : Update
             @Parcelize data object RequestConnectionStats : Update
+            @Parcelize data object RequestLocalAgentStats : Update
         }
     }
 
@@ -232,7 +245,7 @@ internal class ProTunVpnServiceBinder(
 
     private val callbacks = mutableSetOf<ProTunVpnServiceCallback>()
 
-    fun getState(): VpnState = weakService.get()?.state ?: VpnState.Default
+    fun getState(): VpnState = weakService.get()?.state ?: VpnState.Disconnected
 
     fun registerCallback(callback: ProTunVpnServiceCallback) {
         callbacks.add(callback)

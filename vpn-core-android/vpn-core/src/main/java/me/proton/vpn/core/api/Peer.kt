@@ -53,6 +53,11 @@ data class Peer(
      * Client-defined identifier for the peer.
      */
     val id: String,
+
+    /**
+     * Label of the exit node to be passed to the local agent.
+     */
+    val exitLabel: String?,
 ): Parcelable
 
 @Parcelize
