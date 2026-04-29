@@ -42,6 +42,8 @@ import me.proton.vpn.core.api.Logger
 import me.proton.vpn.core.api.PacketCaptureInfo
 import me.proton.vpn.core.api.Peer
 import me.proton.vpn.core.api.SystemEventHandler
+import me.proton.vpn.core.api.VpnConnectionState
+import me.proton.vpn.core.api.VpnDisconnectError
 import me.proton.vpn.core.api.VpnState
 import me.proton.vpn.core.internal.DependencyContainer
 import uniffi.protun.Event
@@ -198,7 +200,7 @@ internal class ProTunVpnService : VpnService() {
             return
 
         logger.log(LogLevel.INFO, "ProTunVpnService onRevoke")
-        manager.clearConnection()
+        manager.clearConnection(endState = VpnConnectionState.Disconnected(VpnDisconnectError.ServiceRevoked))
         // stopSelf without stopForeground will not destroy the service.
         stopForeground(STOP_FOREGROUND_REMOVE)
         stopSelf()

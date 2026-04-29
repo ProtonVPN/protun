@@ -90,6 +90,11 @@ sealed interface AgentConnectionWaitReason : Parcelable {
 sealed interface VpnDisconnectError : Parcelable {
 
     /**
+     * VPN service was revoked. Either by removing VPN in the settings or by starting another VPN app.
+     */
+    data object ServiceRevoked : VpnDisconnectError
+
+    /**
      * System failure establishing VPN connection involving multiple user profiles (or Dual Messenger).
      * On some Android devices setting up split tunneling can cause this error in multi-user scenarios.
      */
