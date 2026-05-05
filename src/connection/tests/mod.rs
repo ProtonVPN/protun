@@ -15,4 +15,5 @@
 // You should have received a copy of the GNU General Public License
 // along with ProtonVPN.  If not, see <https://www.gnu.org/licenses/>.
 
+mod local_agent_handler_tests;
 mod network_recovery_handler_tests;

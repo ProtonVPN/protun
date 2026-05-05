@@ -61,6 +61,27 @@ val rustCratePath = "../.."
 val generatedUniffiDirectory = layout.buildDirectory.file("generated/uniffi/java")
 val rustProfile = "release"
 
+val buildingSampleApp = gradle.startParameter.taskRequests.any { request ->
+    request.args.any { taskName ->
+        if (taskName.startsWith(":")) {
+            // Project-scoped task: only counts if it targets sample-app.
+            taskName.startsWith(":sample-app:")
+        } else {
+            // Unscoped task: applied to every subproject, so sample-app participates.
+            taskName == "build" ||
+                taskName.startsWith("assemble") ||
+                taskName.startsWith("bundle") ||
+                taskName.startsWith("install")
+        }
+    }
+}
+
+val extraCargoFeatures = buildList {
+    add("android")
+    add("uniffi")
+    if (buildingSampleApp) add("test_utils")
+}
+
 cargo {
     module = rustCratePath
     libname = rustCrateName
@@ -68,7 +89,7 @@ cargo {
         addAll(listOf("arm", "arm64", "x86", "x86_64"))
     }
     features {
-        defaultAnd(arrayOf("android", "uniffi"))
+        defaultAnd(extraCargoFeatures.toTypedArray())
     }
     prebuiltToolchains = true
     apiLevel = 25

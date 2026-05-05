@@ -84,7 +84,7 @@ impl Log for ProTunLogger {
     fn flush(&self) {}
 }
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 #[cfg_attr(feature = "uniffi", derive(uniffi::Enum))]
 pub enum LogLevel {
     Trace,

@@ -23,9 +23,10 @@ import kotlinx.serialization.Serializable
 import me.proton.vpn.core.api.ConnectionMode
 import me.proton.vpn.core.api.InitialConfig
 import me.proton.vpn.core.api.InterfaceConfig
+import me.proton.vpn.core.api.LocalAgentSettings
+import me.proton.vpn.core.api.NetShieldLevel
 import me.proton.vpn.core.api.Peer
 import me.proton.vpn.core.api.VpnProtocol
-import kotlinx.serialization.Serializable
 import java.net.InetAddress
 
 @Serializable
@@ -35,7 +36,11 @@ data class VpnConfig(
     val tcpPorts: List<Int> = emptyList(),
     val tlsPorts: List<Int> = emptyList(),
     val peerPublicKey: String,
+    val exitLabel: String?,
     val clientPrivateKey: String,
+    val localAgentMode: Boolean,
+    val username: String,
+    val password: String,
 ) {
     fun toInitialConfig(): InitialConfig {
         val ports = mapOf(
@@ -54,7 +59,6 @@ data class VpnConfig(
 
         return InitialConfig(
             interfaceConfig = InterfaceConfig(supportInTunnelIPv6 = false),
-            mode = ConnectionMode.NoLocalAgent(clientX25519PrivateKeyBase64 = clientPrivateKey),
             peers = listOf(
                 Peer(
                     id = "0",
@@ -62,7 +66,7 @@ data class VpnConfig(
                     publicKeyX25519Base64 = peerPublicKey,
                     priority = 0,
                     ports = ports,
-                    exitLabel = null,
+                    exitLabel = exitLabel,
                 )
             ),
             mode = if (localAgentMode) {

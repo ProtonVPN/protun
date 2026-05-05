@@ -27,6 +27,7 @@ import kotlinx.coroutines.async
 import kotlinx.coroutines.channels.BufferOverflow
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.SharingStarted
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.launchIn
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.onEach
@@ -36,11 +37,14 @@ import me.proton.vpn.core.api.PeerConnection
 import me.proton.vpn.core.api.ProtonVpnConnectionManager
 import me.proton.vpn.core.api.VpnConnectionEvent
 import me.proton.vpn.core.api.VpnConnectionState
+import me.proton.vpn.core.api.VpnErrorEvent
 import me.proton.vpn.core.sample_app.data.ConfigStore
 import me.proton.vpn.core.sample_app.data.VpnConfig
 import me.proton.vpn.core.sample_app.ui.Event.ShowMessage
 import uniffi.protun.getSessionForkSelector
 import javax.inject.Inject
+
+private const val APP_VERSION = "android-vpn@5.17.62.0"
 
 @HiltViewModel
 class MainViewModel @Inject constructor(
@@ -85,21 +89,35 @@ class MainViewModel @Inject constructor(
 
     init {
         connectionManager.events.onEach { event ->
-            val uiEvent = when (event) {
+            when (event) {
                 is VpnConnectionEvent.PacketCaptureStarted ->
-                    Event.ShowMessage("Packet capture started: ${event.info.file}")
+                    events.emit(ShowMessage("Packet capture started: ${event.info.file}"))
                 is VpnConnectionEvent.PacketCaptureStopped ->
-                    Event.ShowMessage("Packet capture stopped: ${event.reason.javaClass.simpleName}")
-                is VpnConnectionEvent.Error ->
-                    Event.ShowMessage("Error: ${event.error.javaClass.simpleName}")
+                    events.emit(ShowMessage("Packet capture stopped: ${event.reason.javaClass.simpleName}"))
+                is VpnConnectionEvent.Error -> when (val error = event.error) {
+                    VpnErrorEvent.ApiSessionExpired ->
+                        configStore.data.first()?.let {
+                            val selector = viewModelScope.async(Dispatchers.IO) {
+                                getSessionForkSelector(APP_VERSION, it.username, it.password)
+                            }
+                            connectionManager.updateApiSelector(selector.await())
+                        }
+
+                    is VpnErrorEvent.LocalAgentSettingPolicyRefused ->
+                        events.emit(ShowMessage("Local agent setting policy refused: ${error.setting.javaClass.simpleName}"))
+
+                    VpnErrorEvent.CertificateRefreshFatalError -> {
+                        connectionManager.disconnect()
+                        events.emit(ShowMessage("Certificate refresh fatal error - disconnecting"))
+                    }
+                }
             }
-            events.emit(uiEvent)
         }.launchIn(viewModelScope)
 
         // Connection stats updates will come every 1s when state is Connected
-        connectionManager.connectionStats.onEach {
-            println("Connection stats: $it")
-        }.launchIn(viewModelScope)
+//        connectionManager.connectionStats.onEach {
+//            println("Connection stats: $it")
+//        }.launchIn(viewModelScope)
     }
 
     fun connect(vpnConfig: VpnConfig) {

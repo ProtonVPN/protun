@@ -19,7 +19,6 @@ use std::collections::{HashMap, HashSet};
 use std::net::{SocketAddr, UdpSocket};
 use std::thread;
 use std::time::Duration;
-use muon::util::IntoIterExt;
 use proton_vpn_local_agent::types::{NetshieldBlockList, Stats};
 use pvpnclient::{LocalAgentAction, LocalAgentMessage, LocalAgentSelector, LocalAgentValue};
 use crate::api::connection::{ConnectivityEvent, IpAddress};
@@ -112,7 +111,7 @@ fn local_agent_values_cache_invalidated_when_connecting_to_another_peer() {
     // ConnectingToLocalAgent rather than Connected.
     let expected_peer = PeerConnectionInfo {
         peer_id: "peer_2".to_string(),
-        entry_ip: peer_2_addr.ip().to_string(),
+        entry_ip: IpAddress(peer_2_addr.ip()),
         protocol: Protocol::WireguardUdp,
         port: peer_2_addr.port(),
     };

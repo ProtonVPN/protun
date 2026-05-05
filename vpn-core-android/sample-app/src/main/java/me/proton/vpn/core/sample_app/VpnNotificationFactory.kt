@@ -63,7 +63,7 @@ class VpnNotificationFactory(
     override fun buildNotification(context: Context, state: VpnState): Notification {
         return NotificationCompat.Builder(context, CHANNEL_ID)
             .setContentTitle("ProtonVPN sample app")
-            .setContentText(state.connectionState.javaClass.simpleName)
+            .setContentText(state.javaClass.simpleName)
             .setSmallIcon(android.R.drawable.ic_lock_lock)
             .setOngoing(true)
             .build()

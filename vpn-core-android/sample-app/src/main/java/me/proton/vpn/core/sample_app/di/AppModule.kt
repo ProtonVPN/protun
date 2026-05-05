@@ -54,11 +54,7 @@ object AppModule {
         mainScope: CoroutineScope,
         configStore: ConfigStore,
         logger: VpnLogger,
-    ): ProtonVpnCore = ProtonVpnCore.create(
-        context = appContext,
-        logger = logger,
-        persistentCacheCipher = null,
-    ) { vpn ->
+    ): ProtonVpnCore = ProtonVpnCore.create(appContext, logger, persistentCacheCipher = null) { vpn ->
         Dependencies(
             notificationFactory =
                 VpnNotificationFactory(appContext, mainScope, vpn.connectionManager),

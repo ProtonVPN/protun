@@ -8,3 +8,4 @@ out/
 Cargo.lock
 /.vs
 csharp_uniffi_output
+config.ini

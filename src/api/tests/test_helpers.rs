@@ -15,6 +15,7 @@
 // You should have received a copy of the GNU General Public License
 // along with ProtonVPN.  If not, see <https://www.gnu.org/licenses/>.
 
+use std::sync::Arc;
 use std::{
     io::{self, Read, Write}, net::{Ipv4Addr, SocketAddr}, os::fd::AsRawFd, str::FromStr, sync::{
         mpsc::{self, Receiver}
@@ -82,11 +83,11 @@ impl StateChangedCallback for TestStateChangedCallback {
 }
 
 pub(crate) struct InMemoryCache {
-    cache: RwLock<HashMap<CacheKey, Vec<u8>>>
+    pub(crate) cache: Arc<RwLock<HashMap<CacheKey, Vec<u8>>>>
 }
 impl InMemoryCache {
     pub(crate) fn new() -> Self {
-        Self { cache: RwLock::new(HashMap::new()) }
+        Self { cache: Arc::new(RwLock::new(HashMap::new())) }
     }
 }
 impl PersistentCache for InMemoryCache {

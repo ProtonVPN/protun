@@ -27,6 +27,12 @@ pub mod connection_unix;
 #[cfg(feature = "local-agent")]
 pub mod local_agent;
 
+#[cfg(feature = "test_utils")]
+pub mod muon_test_auth;
+
+#[cfg(feature = "test_utils")]
+pub mod test_config_parser;
+
 pub mod connection;
 pub mod events;
 pub mod logger;
