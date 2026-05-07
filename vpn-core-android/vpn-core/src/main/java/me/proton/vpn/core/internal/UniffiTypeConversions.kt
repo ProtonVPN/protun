@@ -153,8 +153,9 @@ fun uniffi.protun.AgentConnectionInfo.toCoreApi() = AgentConnectionInfo(
     settings = settings.toCoreApi(),
     restrictions = restrictions.map { restriction ->
         when (restriction) {
-            uniffi.protun.Restriction.STREAMING -> Restriction.Streaming
-            uniffi.protun.Restriction.P2P -> Restriction.P2P
+            is uniffi.protun.Restriction.Streaming -> Restriction.Streaming(restriction.reason)
+            is uniffi.protun.Restriction.Torrent -> Restriction.Torrent(restriction.reason)
+            is uniffi.protun.Restriction.Other -> Restriction.Other(restriction.reason)
         }
     },
 )

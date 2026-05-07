@@ -89,6 +89,7 @@ pub enum WaitJailReason {
 #[cfg_attr(feature = "uniffi", derive(uniffi::Enum))]
 #[derive(Clone, Debug, PartialEq)]
 pub enum Restriction {
-    Streaming,
-    P2P
+    Streaming { reason: String },
+    Torrent { reason: String },
+    Other { name: String, reason: String },
 }

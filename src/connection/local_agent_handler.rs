@@ -17,35 +17,40 @@
 
 use std::collections::HashMap;
 use proton_vpn_local_agent::types::NetshieldBlockList;
-use crate::api::local_agent::{AgentConnectionInfo, WaitJailReason};
+use proton_vpn_local_agent::Value;
+use crate::api::local_agent::{AgentConnectionInfo, Restriction, WaitJailReason};
 use crate::api::state::{AgentConnectionWaitReason, ConnectionState, PeerConnectionInfo};
 use pvpnclient::{LocalAgentSelector, LocalAgentValue};
 use pvpnclient::{Jail, Jails, LocalAgentError, LocalAgentMessage, LocalAgentServerError, UnixTimestamp};
 use crate::api::events::{ErrorEvent, Event, LocalAgentSettingType};
 
 pub(crate) struct LocalAgentHandler {
+    is_connected: bool,
     last_peer: Option<PeerConnectionInfo>,
     agent_info: AgentConnectionInfo,
     established_ts: Option<UnixTimestamp>,
     exit_label: Option<String>,
     jails: Vec<WaitJailReason>,
+    restrictions: Vec<Restriction>,
 }
 
 impl LocalAgentHandler {
     pub(crate) fn new() -> Self {
         Self {
+            is_connected: false,
             last_peer: None,
             agent_info: AgentConnectionInfo::default(),
             exit_label: None,
             established_ts: None,
             jails: Vec::new(),
+            restrictions: Vec::new(),
         }
     }
 
     pub(crate) fn get_state(&self, peer: PeerConnectionInfo) -> ConnectionState {
         if let Some(wait_reason) = self.get_wait_reason() {
             ConnectionState::ConnectingToLocalAgent { peer, wait_reason: Some(wait_reason) }
-        } else if let Some(_) = &self.established_ts {
+        } else if self.is_connected {
             ConnectionState::Connected {
                 peer,
                 agent_info: Some(self.agent_info.clone()),
@@ -68,6 +73,7 @@ impl LocalAgentHandler {
     pub(crate) fn on_connected_to_peer(&mut self, peer: &PeerConnectionInfo) {
         let new_peer = peer.clone();
         if let Some(last_peer) = &self.last_peer && new_peer != *last_peer {
+            self.is_connected = false;
             self.established_ts = None;
             self.exit_label = None;
             self.agent_info = AgentConnectionInfo::default();
@@ -82,6 +88,10 @@ impl LocalAgentHandler {
             LocalAgentMessage::Error(error) => self.handle_error(error),
             LocalAgentMessage::MuonForkSelectorNeeded => {
                 Some(Event::Error { error: ErrorEvent::ApiSessionExpired })
+            }
+            LocalAgentMessage::LocalAgentConnected => {
+                self.is_connected = true;
+                None
             }
         }
     }
@@ -134,6 +144,11 @@ impl LocalAgentHandler {
             LocalAgentValue::StatsBytesReceived(_) |
             LocalAgentValue::StatsBytesSent(_) => {} // handled in LocalAgentValue::Stats
 
+            Value::StatsNetshieldBlockCountMalicious(_) => {}
+            Value::StatsNetshieldBlockCountAds(_) => {}
+            Value::StatsNetshieldBlockCountTracking(_) => {}
+            Value::StatsNetshieldBlockCountAdult(_) => {} // handled in LocalAgentValue::Stats
+
             LocalAgentValue::InfoPlatform(_) => {} // not used for now
             LocalAgentValue::InfoRemote(value) =>
                 self.agent_info.user_isp_ip = value.map(|v| v.0),
@@ -141,21 +156,25 @@ impl LocalAgentHandler {
             LocalAgentValue::InfoGroups(value) =>
                 self.agent_info.groups = value.map(|v| v.0).unwrap_or_default(),
 
-            LocalAgentValue::Infos(_) => {} // individual infos are handled
-            LocalAgentValue::Settings(_) => {} // individual settings are handled
             LocalAgentValue::Stats(value) =>
                 if let Some(stats) = value {
                     return Some(stats.into())
                 },
 
             //TODO: implement when ready in libvpnclient
-            //LocalAgentValue::Connected(_)
             //LocalAgentValue::Disconnected(_)
-            //LocalAgentValue::Restrictions(_)
             //LocalAnentValue::ExitInfo(_)
 
             LocalAgentValue::Jails(jails) =>
                 return self.handle_jails(jails),
+
+            Value::Restrictions(restrictions) => {
+                self.restrictions = if let Some(restrictions)  = restrictions {
+                    restrictions.0.into_iter().map(Into::into).collect()
+                } else {
+                    Vec::new()
+                };
+            }
         }
         None
     }

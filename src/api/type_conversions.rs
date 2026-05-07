@@ -24,7 +24,7 @@ use crate::api::events::Event;
 use crate::connection::pvpn_client::PvpnClientMode;
 
 #[cfg(feature = "local-agent")]
-use crate::api::local_agent::{LocalAgentSettings, NetshieldLevel};
+use crate::api::local_agent::{LocalAgentSettings, NetshieldLevel, Restriction};
 #[cfg(feature = "local-agent")]
 use pvpnclient::{Ed25519PrivateKey, LocalAgentCertificate, MuonAuth, SessionSettings};
 
@@ -147,6 +147,20 @@ impl From<pvpnclient::NetshieldLevel> for NetshieldLevel {
             pvpnclient::NetshieldLevel::None => NetshieldLevel::None,
             pvpnclient::NetshieldLevel::MalwareFilter => NetshieldLevel::MalwareFilter,
             pvpnclient::NetshieldLevel::AdsAndMalwareFilter => NetshieldLevel::AdsAndMalwareFilter,
+        }
+    }
+}
+
+#[cfg(feature = "local-agent")]
+impl From<proton_vpn_local_agent::types::Restriction> for Restriction {
+    fn from(value: proton_vpn_local_agent::types::Restriction) -> Self {
+        match value {
+            proton_vpn_local_agent::types::Restriction::Streaming(reason) =>
+                Restriction::Streaming { reason },
+            proton_vpn_local_agent::types::Restriction::Torrent(reason) =>
+                Restriction::Torrent { reason },
+            proton_vpn_local_agent::types::Restriction::Other { name, reason } =>
+                Restriction::Other { name, reason },
         }
     }
 }

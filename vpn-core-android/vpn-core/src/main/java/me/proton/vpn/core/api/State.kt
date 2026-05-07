@@ -173,7 +173,9 @@ data class LocationCoordinates(
     val longitude: Double,
 ) : Parcelable
 
-enum class Restriction {
-    Streaming,
-    P2P
+@Parcelize
+sealed interface Restriction : Parcelable {
+    data class Streaming(val reason: String) : Restriction
+    data class Torrent(val reason: String) : Restriction
+    data class Other(val reason: String) : Restriction
 }
