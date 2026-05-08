@@ -26,7 +26,7 @@ use crate::connection::windows::udp::UdpSocketStream;
 use pvpnclient::{Deadline, StreamId};
 use windows::Win32::Foundation::{HANDLE, WAIT_EVENT, WAIT_OBJECT_0, WAIT_TIMEOUT};
 use windows::Win32::Networking::WinSock::{WSA_INFINITE, WSAWaitForMultipleEvents};
-use crate::api::state::InterfaceState;
+use crate::api::state::{InterfaceError, InterfaceState};
 
 const TUN_STREAM_INDEX: usize = 0;
 const TIMEOUT_EVENT: u32 = WAIT_TIMEOUT.0;
@@ -173,8 +173,13 @@ impl Streams for WindowsStreams {
         })
     }
 
-    fn get_tun_interface_state(&self) -> InterfaceState {
-        InterfaceState { is_up: self.get_stream_ref(StreamId::TUN_STREAM_ID).is_some() } //TODO: proper impl for windows
+    fn get_tun_interface_state(&self, last_interface_error: Option<InterfaceError>) -> InterfaceState {
+        let is_up = self.get_stream_ref(StreamId::TUN_STREAM_ID).is_some();
+        if is_up {
+            InterfaceState::Up { error: last_interface_error }
+        } else {
+            InterfaceState::Down { last_error: last_interface_error }
+        }
     }
 }
 

@@ -26,18 +26,35 @@ import java.util.Date
 
 @Parcelize
 data class VpnState(
-    val interfaceUp: Boolean,
+    val interfaceState: InterfaceState,
     val connectionState: VpnConnectionState,
 ) : Parcelable {
     companion object {
 
         fun disconnectedWith(error: VpnDisconnectError) = VpnState(
-            interfaceUp = false,
+            interfaceState = InterfaceState.Down(null),
             connectionState = VpnConnectionState.Disconnected(error)
         )
 
-        val Disconnected = VpnState(interfaceUp = false, VpnConnectionState.Disconnected())
+        val Disconnected = VpnState(
+            InterfaceState.Down(null),
+            VpnConnectionState.Disconnected()
+        )
     }
+}
+
+@Parcelize
+sealed interface InterfaceState : Parcelable {
+    data class Up(val error: InterfaceError?): InterfaceState
+    data class Down(val lastError: InterfaceError?): InterfaceState
+}
+
+@Parcelize
+sealed interface InterfaceError : Parcelable {
+
+    /// There is I/O problem with TUN interface. Calling code might need to wait, recreate TUN or
+    /// disconnect (when it was caused by connection by another VPN app).
+    data class IoError(val error: String) : InterfaceError
 }
 
 @Parcelize

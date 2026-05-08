@@ -23,6 +23,8 @@ import me.proton.vpn.core.api.AgentConnectionInfo
 import me.proton.vpn.core.api.AgentConnectionWaitReason
 import me.proton.vpn.core.api.ConnectionMode
 import me.proton.vpn.core.api.ConnectionStats
+import me.proton.vpn.core.api.InterfaceError
+import me.proton.vpn.core.api.InterfaceState
 import me.proton.vpn.core.api.LocalAgentSettingType
 import me.proton.vpn.core.api.LocalAgentStats
 import me.proton.vpn.core.api.NetShieldLevel
@@ -33,6 +35,7 @@ import me.proton.vpn.core.api.Peer
 import me.proton.vpn.core.api.PeerConnection
 import me.proton.vpn.core.api.LocalAgentSettings
 import me.proton.vpn.core.api.LocationCoordinates
+import me.proton.vpn.core.api.PeerConnectionWaitReason
 import me.proton.vpn.core.api.Restriction
 import me.proton.vpn.core.api.VpnConnectionEvent
 import me.proton.vpn.core.api.VpnDisconnectError
@@ -159,6 +162,20 @@ fun uniffi.protun.AgentConnectionInfo.toCoreApi() = AgentConnectionInfo(
         }
     },
 )
+
+fun uniffi.protun.InterfaceState.toCoreApi() = when (this) {
+    is uniffi.protun.InterfaceState.Up -> InterfaceState.Up(error?.toCoreApi())
+    is uniffi.protun.InterfaceState.Down -> InterfaceState.Down(lastError?.toCoreApi())
+}
+
+fun uniffi.protun.InterfaceError.toCoreApi() = when (this) {
+    is uniffi.protun.InterfaceError.IoError -> InterfaceError.IoError(error)
+}
+
+fun uniffi.protun.PeerConnectionWaitReason.toCoreApi() = when (this) {
+    uniffi.protun.PeerConnectionWaitReason.WAITING_FOR_NETWORK ->
+        PeerConnectionWaitReason.WaitingForNetwork
+}
 
 fun uniffi.protun.LocalAgentSettings.toCoreApi() = LocalAgentSettings(
     splitTcp = splitTcp,

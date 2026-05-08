@@ -16,7 +16,7 @@
 // along with ProtonVPN.  If not, see <https://www.gnu.org/licenses/>.
 
 use std::{thread, time::Duration};
-use crate::api::state::ConnectionState;
+use crate::api::state::{ConnectionState, InterfaceState};
 use crate::api::{
     connection::ConnectivityEvent,
     state::{PeerConnectionInfo, Protocol},
@@ -219,7 +219,9 @@ fn connect_without_tun() {
     let (handshake, client_addr) = helper.recv_udp(&udp_server_socket).unwrap();
     assert!(matches!(handshake, DummyProtocolPacket::Handshake(_, _)));
     helper.send_udp_to(&udp_server_socket, &client_addr, &DummyProtocolPacket::HandshakeResponse).unwrap();
-    helper.expect_state(|state| !state.interface_state.is_up && state.connection_state.is_connected());
+    helper.expect_state(|state|
+        matches!(state.interface_state, InterfaceState::Down { last_error : None }) && state.connection_state.is_connected()
+    );
 
     helper.connection.disconnect_and_wait();
 }

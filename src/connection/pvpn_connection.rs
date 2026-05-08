@@ -36,7 +36,7 @@ use crate::{
 };
 use crate::api::connection::{PersistentCache, ConnectionMode, ConnectivityEvent, EventCallback, PcapFileInfo, StateChangedCallback, IpAddress, CacheKey};
 use crate::api::events::{CaptureStopReason, Event};
-use crate::api::state::{ConnectionState, PeerConnectionWaitReason, VpnState};
+use crate::api::state::{ConnectionState, InterfaceError, PeerConnectionWaitReason, VpnState};
 use crate::connection::network_recovery_handler::NetworkRecoveryHandler;
 use crate::connection::pcap_stream::PcapStream;
 
@@ -135,7 +135,7 @@ struct PvpnConnection {
     peers: Vec<PeerInfo>,
     stream_read_buffer: Box<[u8; STREAM_BUFFER_SIZE]>,
     should_stop: bool,
-    current_tun_error: Option<String>,
+    current_tun_error: Option<InterfaceError>,
     network_recovery_handler: NetworkRecoveryHandler,
     pcap_stream: Option<PcapStream>,
     cache: Box<dyn PersistentCache>,
@@ -251,6 +251,8 @@ impl PvpnConnection {
                 PvpnMessage::UpdateTun(create_tun_stream) => {
                     if let Err(e) = self.streams.update_tun(create_tun_stream) {
                         log::error!("failed to update tun: {:?}", e);
+                    } else {
+                        self.current_tun_error = None;
                     }
                 },
                 PvpnMessage::StartPacketCapture(file_info) => {
@@ -536,7 +538,7 @@ impl PvpnConnection {
             self.client.notify_network_change();
         } else {
             self.client.notify_network_down();
-            self.set_state(network_unavailable_state(tunnel_info, &self.current_tun_error));
+            self.set_state(network_unavailable_state(tunnel_info));
         }
     }
 
@@ -566,7 +568,7 @@ impl PvpnConnection {
             log::info!("connection state: {:?}", connection_state);
             self.connection_state = connection_state;
             self.state_change_callback.on_state_changed(VpnState {
-                interface_state: self.streams.get_tun_interface_state(),
+                interface_state: self.streams.get_tun_interface_state(self.current_tun_error.clone()),
                 connection_state: self.connection_state.clone(),
             });
         }
@@ -579,11 +581,7 @@ impl PvpnConnection {
 
     fn get_peer_connection_state(&mut self, tunnel_info: &Option<TunnelInfo>) -> ConnectionState {
         if !self.network_recovery_handler.is_network_available() {
-            return network_unavailable_state(tunnel_info, &self.current_tun_error);
-        }
-        let mut wait_reasons = vec![];
-        if let Some(message) = &self.current_tun_error {
-            wait_reasons.push(PeerConnectionWaitReason::TunIoError { message: message.clone() });
+            return network_unavailable_state(tunnel_info);
         }
         match tunnel_info {
             Some(TunnelInfo::Connected { protocol, peer_addr, peer, .. }) => {
@@ -602,12 +600,12 @@ impl PvpnConnection {
             Some(TunnelInfo::Connecting { protocol, peer_addr, peer, .. }) => {
                 ConnectionState::Connecting {
                     peers: vec![get_peer_connection_info(&peer, &peer_addr, *protocol)],
-                    wait_reasons,
+                    wait_reasons: vec![],
                 }
             }
             Some(TunnelInfo::Disconnected { .. }) if !self.peers.is_empty() => ConnectionState::Connecting {
                 peers: vec![],
-                wait_reasons,
+                wait_reasons: vec![],
             },
             Some(TunnelInfo::Disconnected { .. }) => ConnectionState::Disconnected { error: None },
             None => ConnectionState::Disconnected { error: None },
@@ -615,19 +613,15 @@ impl PvpnConnection {
     }
 }
 
-fn to_tun_error(res: &StreamResult) -> Option<String> {
+fn to_tun_error(res: &StreamResult) -> Option<InterfaceError> {
     match res {
         StreamResult::Ok { .. } => None,
-        StreamResult::Err(e) => Some(e.to_string()),
-        StreamResult::StreamClosed => Some("Stream closed".to_string()),
+        StreamResult::Err(e) => Some(InterfaceError::IoError { error: e.to_string() }),
+        StreamResult::StreamClosed => Some(InterfaceError::IoError { error: "Stream closed".to_string() }),
     }
 }
 
-fn network_unavailable_state(tunnel_info: &Option<TunnelInfo>, last_tun_error: &Option<String>) -> ConnectionState {
-    let mut wait_reasons = vec![PeerConnectionWaitReason::WaitingForNetwork];
-    if let Some(message) = last_tun_error {
-        wait_reasons.push(PeerConnectionWaitReason::TunIoError { message: message.clone() });
-    }
+fn network_unavailable_state(tunnel_info: &Option<TunnelInfo>) -> ConnectionState {
     let peers = match tunnel_info {
         Some(TunnelInfo::Connected { protocol, peer_addr, peer, .. }) => {
             vec![get_peer_connection_info(&peer, &peer_addr, *protocol)]
@@ -637,7 +631,7 @@ fn network_unavailable_state(tunnel_info: &Option<TunnelInfo>, last_tun_error: &
         }
         _ => vec![]
     };
-    ConnectionState::Connecting { peers, wait_reasons }
+    ConnectionState::Connecting { peers, wait_reasons: vec![PeerConnectionWaitReason::WaitingForNetwork] }
 }
 
 fn get_peer_id(peer: &Peer, peer_addr: &SocketAddr) -> String {

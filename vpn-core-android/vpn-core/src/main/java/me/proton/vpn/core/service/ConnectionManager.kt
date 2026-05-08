@@ -29,6 +29,7 @@ import kotlinx.coroutines.launch
 import me.proton.vpn.core.api.ConnectionMode
 import me.proton.vpn.core.api.InitialConfig
 import me.proton.vpn.core.api.InterfaceConfig
+import me.proton.vpn.core.api.InterfaceState
 import me.proton.vpn.core.api.LocalAgentSettings
 import me.proton.vpn.core.api.Logger
 import me.proton.vpn.core.api.PacketCaptureInfo
@@ -168,7 +169,7 @@ internal class ConnectionManager(
     fun clearConnection(endState: VpnConnectionState = VpnConnectionState.Disconnected()) {
         activeConnection?.clear()
         activeConnection = null
-        state.value = VpnState(interfaceUp = false, endState)
+        state.value = VpnState(InterfaceState.Down(null), endState)
     }
 
     fun updateInterfaceConfig(interfaceConfig: InterfaceConfig, builder: VpnService.Builder) {
@@ -225,7 +226,7 @@ internal class ConnectionManager(
 
                     is ConnectionState.Connecting -> VpnConnectionState.Connecting(
                         connectionState.peers.map { it.toCoreApi() },
-                        connectionState.waitReasons.mapNotNull { handleConnectionWaitReason(it) },
+                        connectionState.waitReasons.map { it.toCoreApi() },
                     )
 
                     is ConnectionState.ConnectingToLocalAgent -> VpnConnectionState.ConnectingToLocalAgent(
@@ -239,24 +240,13 @@ internal class ConnectionManager(
                         agentConnectionInfo = connectionState.agentInfo?.toCoreApi()
                     )
                 }
-                state.value = VpnState(proTunState.interfaceState.isUp, connectionState)
-            }
-        }
-    }
-
-    private fun handleConnectionWaitReason(reason: uniffi.protun.PeerConnectionWaitReason): PeerConnectionWaitReason? =
-        when (reason) {
-            uniffi.protun.PeerConnectionWaitReason.WaitingForNetwork ->
-                PeerConnectionWaitReason.WaitingForNetwork
-
-            is uniffi.protun.PeerConnectionWaitReason.TunIoError -> {
                 //TODO(VPNAND-2460): Handle TUN I/O errors properly. Tun fd might invalid because:
                 // - another VPN app took over the TUN interface -> disconnect with error
                 // - system closed the TUN interface due to resource constraints
-                logger.log(LogLevel.ERROR, "TUN I/O error: ${reason.message}")
-                null
+                state.value = VpnState(proTunState.interfaceState.toCoreApi(), connectionState)
             }
         }
+    }
 }
 
 internal class ProTunStateChangedCallback(val weakManager: WeakReference<ConnectionManager>): StateChangedCallback {

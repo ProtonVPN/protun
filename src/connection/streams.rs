@@ -19,7 +19,7 @@ use std::io;
 use std::net::SocketAddr;
 use pvpnclient::{Deadline, StreamId};
 use pvpnclient::action::SocketOption;
-use crate::api::state::InterfaceState;
+use crate::api::state::{InterfaceError, InterfaceState};
 #[cfg(feature = "mio")]
 use crate::connection::CreateTunStream;
 
@@ -54,7 +54,7 @@ pub(crate) trait Streams {
     #[cfg(feature = "mio")]
     fn update_tun(&mut self, create_tun_stream: CreateTunStream) -> io::Result<()>;
 
-    fn get_tun_interface_state(&self) -> InterfaceState;
+    fn get_tun_interface_state(&self, last_interface_error: Option<InterfaceError>) -> InterfaceState;
 }
 
 /// A trait to interrupt a [Streams::poll] call.

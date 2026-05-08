@@ -63,7 +63,6 @@ fn connecting_to_string(peers: &[PeerConnectionInfo], wait_reasons: &[PeerConnec
     let waiting_label = if let Some(wait_reason) = wait_reasons.first() {
         match wait_reason {
             PeerConnectionWaitReason::WaitingForNetwork => " Waiting for network",
-            PeerConnectionWaitReason::TunIoError { message: _ } => " Waiting for tun",
         }
     }
     else {

@@ -19,7 +19,7 @@ use std::{io, net::SocketAddr};
 use crate::connection::{streams::{PollResult, PollWaker, Stream, Streams}, CreateTunStream};
 use mio::{event, Events, Poll, Token, Waker};
 use pvpnclient::{Deadline, StreamId};
-use crate::api::state::InterfaceState;
+use crate::api::state::{InterfaceError, InterfaceState};
 
 const POLL_WAKER_TOKEN: Token = Token(0);
 const EVENTS_CAPACITY: usize = 512; // Safe value for max number of simultaneous streams
@@ -161,9 +161,12 @@ impl Streams for MioStreams {
         Ok(())
     }
 
-    fn get_tun_interface_state(&self) -> InterfaceState {
-        InterfaceState {
-            is_up: get_stream_by_id(&self.streams, StreamId::TUN_STREAM_ID).is_some()
+    fn get_tun_interface_state(&self, last_interface_error: Option<InterfaceError>) -> InterfaceState {
+        let is_up = get_stream_by_id(&self.streams, StreamId::TUN_STREAM_ID).is_some();
+        if is_up {
+            InterfaceState::Up { error: last_interface_error }
+        } else {
+            InterfaceState::Down { last_error: last_interface_error }
         }
     }
 }

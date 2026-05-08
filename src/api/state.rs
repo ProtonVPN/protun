@@ -28,10 +28,20 @@ pub struct VpnState {
 }
 
 /// State of the TUN interface.
-#[cfg_attr(feature = "uniffi", derive(uniffi::Record))]
+#[cfg_attr(feature = "uniffi", derive(uniffi::Enum))]
 #[derive(Clone, Debug, PartialEq)]
-pub struct InterfaceState {
-    pub is_up: bool,
+pub enum InterfaceState {
+    Up { error: Option<InterfaceError> },
+    Down { last_error: Option<InterfaceError> },
+}
+
+#[cfg_attr(feature = "uniffi", derive(uniffi::Enum))]
+#[derive(Clone, Debug, PartialEq)]
+pub enum InterfaceError {
+
+    /// There is I/O problem with TUN interface. Calling code might need to wait, recreate TUN or
+    /// disconnect (when it was caused by connection by another VPN app).
+    IoError { error: String },
 }
 
 /// State of the VPN connection.
@@ -84,10 +94,6 @@ pub enum PeerConnectionWaitReason {
 
     /// Device currently has no network (airplane mode, no signal, etc.)
     WaitingForNetwork,
-
-    /// There is I/O problem with TUN interface. Calling code might need to wait, recreate TUN or
-    /// disconnect (when it was caused by connection by another VPN app).
-    TunIoError { message: String },
 }
 
 #[cfg(feature = "local-agent")]
