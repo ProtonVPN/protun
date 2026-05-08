@@ -35,18 +35,20 @@ impl WindowsStateChangedCallback {
 
 impl StateChangedCallback for WindowsStateChangedCallback {
     fn on_state_changed(&self, state: VpnState) {
-        set_network_adapter_status_text(&map_status_to_text(&state.connection_state));
+        set_network_adapter_status_text(&String::from(&state.connection_state));
         self.client_callback.on_state_changed(state);
     }
 }
 
-fn map_status_to_text(connection_state: &ConnectionState) -> String {
-    match connection_state {
-        ConnectionState::Disconnected { error } => disconnected_to_string(error),
-        ConnectionState::Connecting { peers, wait_reasons } => connecting_to_string(peers, wait_reasons),
-        #[cfg(feature = "local-agent")]
-        ConnectionState::ConnectingToLocalAgent { peer, wait_reason } => connecting_local_agent_to_string(peer, wait_reason),
-        ConnectionState::Connected { peer, .. } => connected_to_string(peer),
+impl From<&ConnectionState> for String {
+    fn from(connection_state: &ConnectionState) -> Self {
+        match connection_state {
+            ConnectionState::Disconnected { error } => disconnected_to_string(error),
+            ConnectionState::Connecting { peers, wait_reasons } => connecting_to_string(peers, wait_reasons),
+            #[cfg(feature = "local-agent")]
+            ConnectionState::ConnectingToLocalAgent { peer, wait_reason } => connecting_local_agent_to_string(peer, wait_reason),
+            ConnectionState::Connected { peer, .. } => connected_to_string(peer),
+        }
     }
 }
 
@@ -58,11 +60,16 @@ fn disconnected_to_string(error: &Option<DisconnectReason>) -> String {
 }
 
 fn connecting_to_string(peers: &[PeerConnectionInfo], wait_reasons: &[PeerConnectionWaitReason]) -> String {
-    let waiting_label = if wait_reasons.is_empty() {
+    let waiting_label = if let Some(wait_reason) = wait_reasons.first() {
+        match wait_reason {
+            PeerConnectionWaitReason::WaitingForNetwork => " Waiting for network",
+            PeerConnectionWaitReason::TunIoError { message: _ } => " Waiting for tun",
+        }
+    }
+    else {
         ""
-    } else {
-        " (waiting...)"
     };
+
     let num_peers: usize = peers.len();
     if num_peers > 1 {
         format!("Connecting ({} peers){}", num_peers, waiting_label)
@@ -82,9 +89,15 @@ fn connecting_local_agent_to_string(
     peer: &PeerConnectionInfo,
     wait_reason: &Option<AgentConnectionWaitReason>,
 ) -> String {
-    if wait_reason.is_some() {
-        format!("Connecting to {} (waiting...)", peer.peer_id)
-    } else {
-        format!("Connecting to {}", peer.peer_id)
+    let waiting_label = if let Some(wait_reason) = wait_reason {
+        match wait_reason {
+            AgentConnectionWaitReason::SoftJailed => " (Soft jailed)",
+            AgentConnectionWaitReason::HardJailed { jails: _ } => " (Hard jailed)",
+        }
     }
+    else {
+        ""
+    };
+
+    format!("Connecting to {}{waiting_label}", peer.peer_id)
 }

@@ -105,12 +105,17 @@ impl WindowsStreams {
             .map(|s| Self::create_poll_result(s))
             .collect()
     }
+    
+    fn get_stream_ref(&self, stream_id: StreamId) -> Option<&WindowsStreamInfo> {
+        log::debug!("Trying to get stream reference with ID {stream_id}");
+        self.streams.iter().find(|s| s.stream_id == stream_id)
+    }
 }
 
 impl Streams for WindowsStreams {
 
     fn get_stream(&mut self, stream_id: StreamId) -> Option<&mut dyn Stream> {
-        log::debug!("Trying to get stream with ID {stream_id}");
+        log::debug!("Trying to get mut stream with ID {stream_id}");
         let WindowsStreamInfo { stream, .. } = self.streams.iter_mut().find(|s| s.stream_id == stream_id)?;
         Some(stream.as_mut())
     }
@@ -169,7 +174,7 @@ impl Streams for WindowsStreams {
     }
 
     fn get_tun_interface_state(&self) -> InterfaceState {
-        InterfaceState { is_up: true } //TODO: proper impl for windows
+        InterfaceState { is_up: self.get_stream_ref(StreamId::TUN_STREAM_ID).is_some() } //TODO: proper impl for windows
     }
 }
 
