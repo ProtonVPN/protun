@@ -78,6 +78,7 @@ windows = ["dep:serde", "dep:serde_json", "dep:socket2", "dep:thiserror", "dep:u
 uniffi = ["dep:uniffi"]
 mio = ["dep:mio"]
 local-agent = ["pvpnclient/local-agent", "dep:proton-vpn-local-agent", "dep:rustls-pki-types", "dep:muon"]
+real-connection-tests = []
 # Development-only feature to help establish proton session in sample code.
 test_utils = ["dep:tokio", "dep:async-compat", "dep:futures", "dep:muon", "dep:ini", "dep:base64"]
 

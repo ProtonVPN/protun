@@ -32,4 +32,5 @@ mod dummy_local_agent_tests;
 
 #[cfg(feature = "mio")]
 #[cfg(feature = "local-agent")]
+#[cfg(feature = "real-connection-tests")]
 mod real_connection_tests;
