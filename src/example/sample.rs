@@ -27,7 +27,8 @@ use std::thread;
 use libc::{ioctl, open, O_NONBLOCK, O_RDWR};
 #[cfg(target_os = "linux")]
 use std::{ffi::c_void, io};
-use protun::api::test_config_parser::{parse_ini_config, ParsedConfig};
+use protun::api::test_utils::muon_test_auth::get_session_fork_selector;
+use protun::api::test_utils::test_config_parser::{parse_ini_config, ParsedConfig};
 
 mod binary_blob_file;
 
@@ -165,7 +166,7 @@ fn main()  {
                     Event::Error { error: ErrorEvent::ApiSessionExpired } => {
                         let user = fork_config.username.clone();
                         let pass = fork_config.password.clone();
-                        let fork_selector = protun::api::muon_test_auth::get_session_fork_selector(
+                        let fork_selector = get_session_fork_selector(
                             &fork_config.app_version, &user, &pass).into();
                         connection.provide_api_fork_selector(fork_selector);
                     }
