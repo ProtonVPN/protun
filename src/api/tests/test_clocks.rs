@@ -62,6 +62,11 @@ impl TestRealtimeClock {
     pub(crate) fn now_nanos(&self) -> u128 {
         *self.current_time_ns.lock().unwrap()
     }
+    
+    pub(crate) fn now(&self) -> Duration {
+        let now_ns = *self.current_time_ns.lock().unwrap();
+        Duration::from_nanos_u128(now_ns)
+    }
 
     pub(crate) fn set_nanos(&self, time_ns: u128) {
         *self.current_time_ns.lock().unwrap() = time_ns;

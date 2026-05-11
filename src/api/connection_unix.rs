@@ -26,6 +26,7 @@ use crate::{
 use mio::Poll;
 use pvpnclient::os_interface::rand::CryptoSeedProvider;
 use std::io;
+use pvpnclient::os_interface::time::{SinceEpoch, SystemTimeFactory};
 
 #[cfg(feature = "apple")]
 type TunStreamUnixType = crate::connection::mio::tun_apple::TunStreamApple;
@@ -117,9 +118,10 @@ fn create_pvpn_dependencies(
     let streams = MioStreams::new(tun_stream, socket_factory, poll)
         .expect("Failed to create mio streams");
 
+    let realtime_factory = ClientRealtimeFactory::new();
     let pvpn_client = PvpnClientImpl::new(
         ClientMonotonicFactory::new(),
-        ClientRealtimeFactory::new(),
+        realtime_factory.clone(),
         config.connection_mode.to_pvpn_client_mode(&cache)?,
         || CryptoSeedProvider::new(rand::rng()).into()
     )?;
@@ -131,6 +133,7 @@ fn create_pvpn_dependencies(
             client: Box::new(pvpn_client),
             state_change_callback,
             event_callback,
+            realtime_clock: Box::new(move || realtime_factory.now().duration_since_epoch()),
             cache,
         }
     )

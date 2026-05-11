@@ -33,6 +33,7 @@ use crate::{
         state::{PeerConnectionInfo, Protocol},
     },
     connection::{pvpn_client::PvpnClient, streams::{PendingWrite, PollResult, PollWaker, StreamResult, Streams, WouldBlock}},
+    connection::time::RealtimeClock
 };
 use crate::api::connection::{PersistentCache, ConnectionMode, ConnectivityEvent, EventCallback, PcapFileInfo, StateChangedCallback, IpAddress, CacheKey};
 use crate::api::events::{CaptureStopReason, Event};
@@ -55,6 +56,7 @@ pub(crate) struct PvpnDependencies {
     pub state_change_callback: Box<dyn StateChangedCallback>,
     pub event_callback: Box<dyn EventCallback>,
     pub cache: Box<dyn PersistentCache>,
+    pub realtime_clock: RealtimeClock,
 }
 
 /// Messages that can be sent to the connection loop.
@@ -103,6 +105,7 @@ pub(crate) fn start_pvpn_connection(
                     deps.config.network_available,
                     deps.config.peers,
                     deps.config.pcap_file,
+                    deps.realtime_clock,
                     #[cfg(feature = "local-agent")]
                     match deps.config.connection_mode {
                         ConnectionMode::NoLocalAgent { .. } => None,
@@ -141,6 +144,7 @@ struct PvpnConnection {
     cache: Box<dyn PersistentCache>,
     #[cfg(feature = "local-agent")]
     local_agent_handler: Option<LocalAgentHandler>,
+    realtime_clock: RealtimeClock,
 }
 impl PvpnConnection {
     fn new(
@@ -153,6 +157,7 @@ impl PvpnConnection {
         network_available: bool,
         peers: Vec<PeerInfo>,
         pcap_file_info: Option<PcapFileInfo>,
+        realtime_clock: RealtimeClock,
         #[cfg(feature = "local-agent")]
         local_agent_settings: Option<LocalAgentSettings>,
     ) -> Self {
@@ -174,6 +179,7 @@ impl PvpnConnection {
             current_tun_error: None,
             network_recovery_handler: NetworkRecoveryHandler::new(network_available),
             pcap_stream: None,
+            realtime_clock,
             cache,
             #[cfg(feature = "local-agent")]
             local_agent_handler,
@@ -263,7 +269,8 @@ impl PvpnConnection {
                 },
                 PvpnMessage::RequestStats => {
                     if let Some(stats) = self.client.get_stats() {
-                        self.emit_event(stats.into());
+                        let timestamp_ms = (self.realtime_clock)().as_millis() as i64;
+                        self.emit_event(Event::from_tunnel_stats(stats, timestamp_ms));
                     }
                 }
                 #[cfg(feature = "local-agent")]

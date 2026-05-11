@@ -255,7 +255,7 @@ pub(crate) fn prepare_connection_test(
             let client = Box::new(DummyPvpnClient::new(
                 config.connection_mode.to_pvpn_client_mode(&cache).unwrap(),
                 monotonic_clock_clone,
-                realtime_clock_clone,
+                realtime_clock_clone.clone(),
                 #[cfg(feature = "local-agent")]
                 DummyLocalAgentScript::new_empty()
             ));
@@ -269,6 +269,7 @@ pub(crate) fn prepare_connection_test(
                 client,
                 state_change_callback,
                 event_callback,
+                realtime_clock: Box::new(move || realtime_clock_clone.now()),
                 cache,
             })
         },
@@ -415,7 +416,7 @@ pub(crate) fn prepare_local_agent_connection_test(
                 DummyPvpnClient::new(
                     config.connection_mode.to_pvpn_client_mode(&cache).unwrap(),
                     monotonic_clock_clone,
-                    realtime_clock_clone,
+                    realtime_clock_clone.clone(),
                     script_clone
                 )
             );
@@ -429,6 +430,7 @@ pub(crate) fn prepare_local_agent_connection_test(
                 client,
                 state_change_callback,
                 event_callback,
+                realtime_clock: Box::new(move || realtime_clock_clone.now()),
                 cache,
             })
         },

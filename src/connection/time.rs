@@ -15,8 +15,12 @@
 // You should have received a copy of the GNU General Public License
 // along with ProtonVPN.  If not, see <https://www.gnu.org/licenses/>.
 
+use std::time::Duration;
 use pvpnclient::os_interface::time::{FromDuration, Instant, InstantFactory, Monotonic, SystemTime, SystemTimeFactory};
 
+pub(crate) type RealtimeClock = Box<dyn Fn() -> Duration>;
+
+#[derive(Clone)]
 pub(crate) struct ClientRealtimeFactory;
 impl SystemTimeFactory for ClientRealtimeFactory {
     type SystemTime = SystemTime;

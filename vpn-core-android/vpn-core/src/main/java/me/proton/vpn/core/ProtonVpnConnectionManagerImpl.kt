@@ -67,7 +67,7 @@ internal class ProtonVpnConnectionManagerImpl(
     private val mainScope: CoroutineScope,
     private val context: Context,
     private val logger: Logger,
-    private val clock: () -> Long = System::currentTimeMillis,
+    private val realtimeClockMs: () -> Long = System::currentTimeMillis,
 ): ProtonVpnConnectionManager {
 
     private val serviceConnection: ServiceConnection
@@ -94,7 +94,7 @@ internal class ProtonVpnConnectionManagerImpl(
         .distinctUntilChanged()
         .flatMapLatest { isConnected ->
             if (isConnected) {
-                tickFlow(interval, clock).onEach { request() }
+                tickFlow(interval, realtimeClockMs).onEach { request() }
             } else {
                 flowOf(null)
             }
@@ -152,6 +152,8 @@ internal class ProtonVpnConnectionManagerImpl(
     }
 
     override fun connect(config: InitialConfig) {
+        //NOTE: concurrency issues in this class are avoided by delegating all work reading/writing
+        //  shared state to the main thread.
         mainScope.launch {
             if (!bound) {
                 bound = context.bindService(

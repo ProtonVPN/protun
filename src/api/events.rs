@@ -24,6 +24,7 @@ use crate::api::connection::PcapFileInfo;
 pub enum Event {
 
     ConnectionStats {
+        timestamp_ms: i64, //ms since epoch
         received_bytes: u64,
         sent_bytes: u64,
         time_since_last_handshake: Duration,

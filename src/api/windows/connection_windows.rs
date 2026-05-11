@@ -20,7 +20,7 @@ use std::io::{Error, ErrorKind};
 use std::net::IpAddr;
 use std::sync::Arc;
 use pvpnclient::os_interface::rand::CryptoSeedProvider;
-
+use pvpnclient::os_interface::time::{SinceEpoch, SystemTimeFactory};
 use crate::api::connection::{EventCallback, IpAddress, PersistentCache};
 use crate::api::windows::protun_error::ProTunFatalError;
 use crate::api::windows::state_changed_callback::WindowsStateChangedCallback;
@@ -202,10 +202,11 @@ fn create_pvpn_dependencies(
         .map_err(|e| Error::new(ErrorKind::Other, format!("Failed to create streams: {e}")))?);
     let streams: Box<dyn Streams> = Box::new(WindowsStreams::new(tun_stream, waker, udp_socket_config));
 
+    let realtime_factory = ClientRealtimeFactory::new();
     let client = Box::new(
         PvpnClientImpl::new(
             ClientMonotonicFactory::new(),
-            ClientRealtimeFactory::new(),
+            realtime_factory.clone(),
             config.connection_mode.to_pvpn_client_mode(&cache)?,
             || CryptoSeedProvider::new(rand::rng()).into()
         )?
@@ -218,6 +219,7 @@ fn create_pvpn_dependencies(
             client,
             state_change_callback,
             event_callback,
+            realtime_clock: Box::new(move || realtime_factory.now().duration_since_epoch()),
             cache,
         }
     )

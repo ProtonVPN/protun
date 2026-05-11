@@ -187,6 +187,7 @@ fun uniffi.protun.LocalAgentSettings.toCoreApi() = LocalAgentSettings(
 )
 
 fun Event.ConnectionStats.toCoreApi() = ConnectionStats(
+    timestampMs = timestampMs,
     receivedBytes = receivedBytes,
     sentBytes = sentBytes,
     timeSinceLastHandshake = timeSinceLastHandshake,
