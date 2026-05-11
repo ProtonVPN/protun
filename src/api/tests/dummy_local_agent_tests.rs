@@ -19,7 +19,7 @@ use std::collections::{HashMap, HashSet};
 use std::net::{SocketAddr, UdpSocket};
 use std::thread;
 use std::time::Duration;
-use proton_vpn_local_agent::types::{NetshieldBlockList, Stats};
+use proton_vpn_local_agent::types::{HandledJail, NetshieldBlockList, Stats, ToHandleJail};
 use pvpnclient::{LocalAgentAction, LocalAgentMessage, LocalAgentSelector, LocalAgentValue};
 use crate::api::connection::{ConnectivityEvent, IpAddress};
 use crate::api::events::Event;
@@ -199,13 +199,13 @@ fn jail_after_connecting_to_local_agent() {
         (connected_id.to_string(), LocalAgentMessage::LocalAgentConnected),
         (jails_set_id.to_string(), LocalAgentMessage::Value(LocalAgentValue::Jails(Some(
             pvpnclient::Jails(HashSet::from([
-                pvpnclient::Jail::PolicyViolation1("low plan".to_string()),
-                pvpnclient::Jail::ExpiredCertificate("cert expired".to_string()),
+                pvpnclient::Jail::ToHandle(ToHandleJail::PolicyViolation1("low plan".to_string())),
+                pvpnclient::Jail::InternallyHandled(HandledJail::ExpiredCertificate("cert expired".to_string())),
             ]))
         )))),
         (clear_policy_violation_id.to_string(), LocalAgentMessage::Value(LocalAgentValue::Jails(Some(
             pvpnclient::Jails(HashSet::from([
-                pvpnclient::Jail::ExpiredCertificate("cert expired".to_string()),
+                pvpnclient::Jail::InternallyHandled(HandledJail::ExpiredCertificate("cert expired".to_string())),
             ]))
         )))),
         (jails_cleared_id.to_string(), LocalAgentMessage::Value(LocalAgentValue::Jails(None))),

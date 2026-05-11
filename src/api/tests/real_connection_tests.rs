@@ -15,13 +15,14 @@
 // You should have received a copy of the GNU General Public License
 // along with ProtonVPN.  If not, see <https://www.gnu.org/licenses/>.
 
+use crate::api::test_utils::muon_test_auth::get_session_fork_selector;
 use std::sync::Arc;
 use std::sync::mpsc::Receiver;
 use crate::api::state::{ConnectionState, VpnState};
 use crate::api::connection::{CacheKey, Connection};
 use crate::api::events::{ErrorEvent, Event};
 use crate::api::local_agent::{LocalAgentSettings, NetshieldLevel};
-use crate::api::test_config_parser::{parse_ini_config, ParsedConfig, ParsedForkConfig};
+use crate::api::test_utils::test_config_parser::{parse_ini_config, ParsedConfig, ParsedForkConfig};
 use crate::api::tests::test_helpers::InMemoryCache;
 use std::collections::HashMap;
 use std::sync::RwLock;
@@ -139,7 +140,7 @@ fn await_state(
                         if let Some(fork_config) = fork_config {
                             let user = fork_config.username.clone();
                             let pass = fork_config.password.clone();
-                            let fork_selector = crate::api::muon_test_auth::get_session_fork_selector(
+                            let fork_selector = get_session_fork_selector(
                                 &fork_config.app_version, &user, &pass).into();
                             connection.provide_api_fork_selector(fork_selector);
                         }

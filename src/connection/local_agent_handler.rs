@@ -16,8 +16,7 @@
 // along with ProtonVPN.  If not, see <https://www.gnu.org/licenses/>.
 
 use std::collections::HashMap;
-use proton_vpn_local_agent::types::NetshieldBlockList;
-use proton_vpn_local_agent::Value;
+use proton_vpn_local_agent::types::{HandledJail, NetshieldBlockList, ToHandleJail};
 use crate::api::local_agent::{AgentConnectionInfo, Restriction, WaitJailReason};
 use crate::api::state::{AgentConnectionWaitReason, ConnectionState, PeerConnectionInfo};
 use pvpnclient::{LocalAgentSelector, LocalAgentValue};
@@ -100,16 +99,17 @@ impl LocalAgentHandler {
     pub(crate) fn local_agent_selectors_to_watch() -> Vec<LocalAgentSelector> {
         vec![
             LocalAgentSelector::InfoEstablished,
+            LocalAgentSelector::InfoGroups,
             // LocalAgentSelector::InfoPlatform,
             LocalAgentSelector::InfoRemote,
-            LocalAgentSelector::InfoGroups,
-            LocalAgentSelector::SettingsSoftjail,
+            //LocalAgentSelector::Restrictions, //TODO(VPNCORE-112): causes connection error when watched
+            LocalAgentSelector::SettingsCircumventionRouting,
+            LocalAgentSelector::SettingsLabel,
+            LocalAgentSelector::SettingsNetshieldLevel,
             LocalAgentSelector::SettingsPortForwarding,
             LocalAgentSelector::SettingsRandomNat,
+            LocalAgentSelector::SettingsSoftjail,
             LocalAgentSelector::SettingsSplitTcp,
-            LocalAgentSelector::SettingsCircumventionRouting,
-            LocalAgentSelector::SettingsNetshieldLevel,
-            LocalAgentSelector::SettingsLabel,
             LocalAgentSelector::Jails,
         ]
     }
@@ -120,8 +120,30 @@ impl LocalAgentHandler {
             LocalAgentValue::InfoEstablished(timestamp) =>
                 self.established_ts = timestamp,
 
-            LocalAgentValue::SettingsSoftjail(value) =>
-                self.agent_info.settings.soft_jail = value.map(|v| v.0),
+            LocalAgentValue::InfoGroups(value) =>
+                self.agent_info.groups = value.map(|v| v.0).unwrap_or_default(),
+
+            LocalAgentValue::InfoPlatform(_) => {} // not used for now
+
+            LocalAgentValue::InfoRemote(value) =>
+                self.agent_info.user_isp_ip = value.map(|v| v.0),
+
+            LocalAgentValue::Restrictions(restrictions) => {
+                self.restrictions = if let Some(restrictions)  = restrictions {
+                    restrictions.0.into_iter().map(Into::into).collect()
+                } else {
+                    Vec::new()
+                };
+            }
+
+            LocalAgentValue::SettingsCircumventionRouting(value) =>
+                self.agent_info.settings.circumvention_routing = value.map(|v| v.0),
+
+            LocalAgentValue::SettingsLabel(value) =>
+                self.exit_label = value.map(|v| v.0),
+
+            LocalAgentValue::SettingsNetshieldLevel(value) =>
+                self.agent_info.settings.netshield_level = value.map(Into::into),
 
             LocalAgentValue::SettingsPortForwarding(value) =>
                 self.agent_info.settings.port_forwarding = value.map(|v| v.0),
@@ -129,52 +151,30 @@ impl LocalAgentHandler {
             LocalAgentValue::SettingsRandomNat(value) =>
                 self.agent_info.settings.random_nat = value.map(|v| v.0),
 
+            LocalAgentValue::SettingsSoftjail(value) =>
+                self.agent_info.settings.soft_jail = value.map(|v| v.0),
+
             LocalAgentValue::SettingsSplitTcp(value) =>
                 self.agent_info.settings.split_tcp = value.map(|v| v.0),
-
-            LocalAgentValue::SettingsCircumventionRouting(value) =>
-                self.agent_info.settings.circumvention_routing = value.map(|v| v.0),
-
-            LocalAgentValue::SettingsNetshieldLevel(value) =>
-                self.agent_info.settings.netshield_level = value.map(Into::into),
-
-            LocalAgentValue::SettingsLabel(value) =>
-                self.exit_label = value.map(|v| v.0),
 
             LocalAgentValue::StatsBytesReceived(_) |
             LocalAgentValue::StatsBytesSent(_) => {} // handled in LocalAgentValue::Stats
 
-            Value::StatsNetshieldBlockCountMalicious(_) => {}
-            Value::StatsNetshieldBlockCountAds(_) => {}
-            Value::StatsNetshieldBlockCountTracking(_) => {}
-            Value::StatsNetshieldBlockCountAdult(_) => {} // handled in LocalAgentValue::Stats
-
-            LocalAgentValue::InfoPlatform(_) => {} // not used for now
-            LocalAgentValue::InfoRemote(value) =>
-                self.agent_info.user_isp_ip = value.map(|v| v.0),
-
-            LocalAgentValue::InfoGroups(value) =>
-                self.agent_info.groups = value.map(|v| v.0).unwrap_or_default(),
+            LocalAgentValue::StatsNetshieldBlockCountMalicious(_) => {}
+            LocalAgentValue::StatsNetshieldBlockCountAds(_) => {}
+            LocalAgentValue::StatsNetshieldBlockCountTracking(_) => {}
+            LocalAgentValue::StatsNetshieldBlockCountAdult(_) => {} // handled in LocalAgentValue::Stats
 
             LocalAgentValue::Stats(value) =>
                 if let Some(stats) = value {
                     return Some(stats.into())
                 },
 
-            //TODO: implement when ready in libvpnclient
-            //LocalAgentValue::Disconnected(_)
+            //TODO(VPNCORE-108): implement when ready in libvpnclient
             //LocalAnentValue::ExitInfo(_)
 
             LocalAgentValue::Jails(jails) =>
                 return self.handle_jails(jails),
-
-            Value::Restrictions(restrictions) => {
-                self.restrictions = if let Some(restrictions)  = restrictions {
-                    restrictions.0.into_iter().map(Into::into).collect()
-                } else {
-                    Vec::new()
-                };
-            }
         }
         None
     }
@@ -182,44 +182,48 @@ impl LocalAgentHandler {
     fn handle_jails(&mut self, jails: Option<Jails>) -> Option<Event> {
         self.jails.clear();
         if let Some(jails) = jails {
-            for jail in jails.0 {
-                let wait_reason : WaitJailReason = match jail {
-                    Jail::RequireRecent2FA(message) => WaitJailReason::Need2FA { message },
-                    Jail::Expired2FA(message) => WaitJailReason::Need2FA { message },
-                    Jail::Require2FA(message) => WaitJailReason::Need2FA { message },
-                    Jail::WaitingClientChallengeReply(message) => WaitJailReason::WaitingClientChallengeReply { message },
-
-                    Jail::PolicyViolation1(message) => WaitJailReason::LowPlan { message },
-                    Jail::PolicyViolation2(message) => WaitJailReason::PendingInvoice { message },
-                    Jail::BadUserBehavior(message) => WaitJailReason::BadUserBehavior { message },
-                    Jail::DisabledUser(message) => WaitJailReason::DisabledUser { message },
-                    Jail::SessionOverLimit(message) => WaitJailReason::SessionOverLimit { message },
-                    Jail::FreeSessionOverLimit(message) => WaitJailReason::SessionOverLimit { message },
-                    Jail::BasicSessionOverLimit(message) => WaitJailReason::SessionOverLimit { message },
-                    Jail::PlusSessionOverLimit(message) => WaitJailReason::SessionOverLimit { message },
-                    Jail::VisionarySessionOverLimit(message) => WaitJailReason::SessionOverLimit { message },
-                    Jail::ProSessionOverLimit(message) => WaitJailReason::SessionOverLimit { message },
-
-                    // do nothing, will be handled internally by libpvpnclient
-                    Jail::GuestSession(message) => {
-                        // should not happen
-                        log::warn!("GuestSession: {:?}", message);
-                        WaitJailReason::Internal { message }
+            jails.0.into_iter().for_each(|jail| {
+                let wait_reason: WaitJailReason = match jail {
+                    Jail::InternallyHandled(jail) => match jail {
+                        HandledJail::SystemError(message) => WaitJailReason::Internal { message },
+                        HandledJail::ExpiredCertificate(message) => WaitJailReason::Internal { message },
+                        HandledJail::RevokedCertificate(message) => WaitJailReason::Internal { message },
+                        HandledJail::KeyAlreadyUsed(message) => WaitJailReason::Internal { message },
+                        HandledJail::InvalidCertificateSignature(message) => WaitJailReason::Internal { message },
                     }
-                    Jail::RestrictedServer(message) => WaitJailReason::Internal { message },
-                    Jail::SystemError(message) => WaitJailReason::Internal { message },
-                    Jail::ExpiredCertificate(message) => WaitJailReason::Internal { message },
-                    Jail::RevokedCertificate(message) => WaitJailReason::Internal { message },
-                    Jail::KeyAlreadyUsed(message) => WaitJailReason::Internal { message },
-                    Jail::InvalidCertificateSignature(message) => WaitJailReason::Internal { message },
-                    Jail::NoCertificateProvided(message) => WaitJailReason::Internal { message },
-                    Jail::SessionInstallationInProgress(message) => WaitJailReason::Internal { message },
+                    Jail::ToHandle(jail) => match jail {
+                        ToHandleJail::RequireRecent2FA(message) => WaitJailReason::Need2FA { message },
+                        ToHandleJail::Expired2FA(message) => WaitJailReason::Need2FA { message },
+                        ToHandleJail::Require2FA(message) => WaitJailReason::Need2FA { message },
+                        ToHandleJail::WaitingClientChallengeReply(message) => WaitJailReason::WaitingClientChallengeReply { message },
 
-                    Jail::Unknown(code, msg) =>
-                        WaitJailReason::Other { code, message: msg },
+                        ToHandleJail::PolicyViolation1(message) => WaitJailReason::LowPlan { message },
+                        ToHandleJail::PolicyViolation2(message) => WaitJailReason::PendingInvoice { message },
+                        ToHandleJail::BadUserBehavior(message) => WaitJailReason::BadUserBehavior { message },
+                        ToHandleJail::DisabledUser(message) => WaitJailReason::DisabledUser { message },
+                        ToHandleJail::SessionOverLimit(message) => WaitJailReason::SessionOverLimit { message },
+                        ToHandleJail::FreeSessionOverLimit(message) => WaitJailReason::SessionOverLimit { message },
+                        ToHandleJail::BasicSessionOverLimit(message) => WaitJailReason::SessionOverLimit { message },
+                        ToHandleJail::PlusSessionOverLimit(message) => WaitJailReason::SessionOverLimit { message },
+                        ToHandleJail::VisionarySessionOverLimit(message) => WaitJailReason::SessionOverLimit { message },
+                        ToHandleJail::ProSessionOverLimit(message) => WaitJailReason::SessionOverLimit { message },
+
+                        //TODO(VPNCORE-108): should be HandledJail?
+                        ToHandleJail::GuestSession(message) => {
+                            // should not happen
+                            log::warn!("GuestSession: {:?}", message);
+                            WaitJailReason::Internal { message }
+                        }
+                        ToHandleJail::RestrictedServer(message) => WaitJailReason::Internal { message },
+                        ToHandleJail::NoCertificateProvided(message) => WaitJailReason::Internal { message },
+                        ToHandleJail::SessionInstallationInProgress(message) => WaitJailReason::Internal { message },
+
+                        ToHandleJail::Unknown(code, msg) =>
+                            WaitJailReason::Other { code, message: msg },
+                    }
                 };
                 self.jails.push(wait_reason);
-            }
+            });
         }
         None
     }

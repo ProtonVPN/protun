@@ -19,7 +19,7 @@ use crate::api::local_agent::NetshieldLevel;
 use std::collections::HashSet;
 use std::net::IpAddr;
 use std::str::FromStr;
-use proton_vpn_local_agent::types::{RedisBoolean, UnixTimestamp};
+use proton_vpn_local_agent::types::{HandledJail, RedisBoolean, ToHandleJail, UnixTimestamp};
 use pvpnclient::{Jail, Jails, LocalAgentError, LocalAgentMessage, LocalAgentValue};
 use crate::api::connection::IpAddress;
 use crate::api::events::{ErrorEvent, Event};
@@ -61,7 +61,7 @@ fn connecting_when_hard_jailed() {
     let mut handler = LocalAgentHandler::new();
     handler.handle_message(LocalAgentMessage::LocalAgentConnected);
     handler.handle_message(LocalAgentMessage::Value(LocalAgentValue::Jails(Some(
-        Jails(HashSet::from([Jail::PolicyViolation1("low plan".to_string())]))
+        Jails(HashSet::from([Jail::ToHandle(ToHandleJail::PolicyViolation1("low plan".to_string()))]))
     ))));
     assert!(matches!(
         handler.get_state(peer("1.2.3.4")),
@@ -80,7 +80,7 @@ fn internal_jails_are_mapped_to_internal_variant() {
     let mut handler = LocalAgentHandler::new();
     handler.handle_message(LocalAgentMessage::LocalAgentConnected);
     handler.handle_message(LocalAgentMessage::Value(LocalAgentValue::Jails(Some(
-        Jails(HashSet::from([Jail::ExpiredCertificate("cert expired".to_string())]))
+        Jails(HashSet::from([Jail::InternallyHandled(HandledJail::ExpiredCertificate("cert expired".to_string()))]))
     ))));
     assert!(matches!(
         handler.get_state(peer("1.2.3.4")),
