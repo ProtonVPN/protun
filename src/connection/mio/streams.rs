@@ -16,10 +16,17 @@
 // along with ProtonVPN.  If not, see <https://www.gnu.org/licenses/>.
 
 use std::{io, net::SocketAddr};
-use crate::connection::{streams::{PollResult, PollWaker, Stream, Streams}, CreateTunStream};
+use crate::connection::{streams::{PollResult, PollWaker, Stream, Streams}};
 use mio::{event, Events, Poll, Token, Waker};
 use pvpnclient::{Deadline, StreamId};
+use crate::api::connection::TunStreamInfo;
 use crate::api::state::{InterfaceError, InterfaceState};
+
+#[cfg(feature = "apple")]
+pub(crate) type TunStreamUnixType = crate::connection::mio::tun_apple::TunStreamApple;
+
+#[cfg(all(feature = "unix", not(feature = "apple")))]
+pub(crate) type TunStreamUnixType = crate::connection::mio::tun_unix::TunStreamUnix;
 
 const POLL_WAKER_TOKEN: Token = Token(0);
 const EVENTS_CAPACITY: usize = 512; // Safe value for max number of simultaneous streams
@@ -152,9 +159,12 @@ impl Streams for MioStreams {
         }
     }
 
-    fn update_tun(&mut self, create_tun_stream: CreateTunStream) -> io::Result<()> {
+    fn update_tun(&mut self, tun_info: TunStreamInfo) -> io::Result<()> {
         self.close_stream(StreamId::TUN_STREAM_ID);
-        let tun = create_tun_stream();
+        let tun = match tun_info {
+            TunStreamInfo::NoTun => None,
+            TunStreamInfo::TunFd(fd) => Some(Box::new(TunStreamUnixType::new(fd))),
+        };
         if let Some(tun) = tun {
             self.register_stream(StreamId::TUN_STREAM_ID, tun, mio::Interest::READABLE)?
         }

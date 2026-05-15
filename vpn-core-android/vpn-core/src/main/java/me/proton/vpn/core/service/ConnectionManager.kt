@@ -34,7 +34,6 @@ import me.proton.vpn.core.api.LocalAgentSettings
 import me.proton.vpn.core.api.Logger
 import me.proton.vpn.core.api.PacketCaptureInfo
 import me.proton.vpn.core.api.Peer
-import me.proton.vpn.core.api.PeerConnectionWaitReason
 import me.proton.vpn.core.api.VpnConnectionState
 import me.proton.vpn.core.api.VpnState
 import me.proton.vpn.core.internal.WallClockMs
@@ -42,6 +41,7 @@ import me.proton.vpn.core.internal.toCoreApi
 import me.proton.vpn.core.internal.toUniFFI
 import me.proton.vpn.core.service.usecases.EstablishTun
 import me.proton.vpn.core.service.usecases.NetworkObserver
+import uniffi.protun.ConfigUpdate
 import uniffi.protun.Connection
 import uniffi.protun.ConnectionState
 import uniffi.protun.ConnectivityEvent
@@ -50,6 +50,7 @@ import uniffi.protun.InitialConnectionConfig
 import uniffi.protun.LogLevel
 import uniffi.protun.PersistentCache
 import uniffi.protun.StateChangedCallback
+import uniffi.protun.TunStreamInfo
 import java.lang.ref.WeakReference
 import java.util.Date
 
@@ -112,19 +113,29 @@ internal class ConnectionManager(
         if (currentConfig != null) {
             // For local agent mode if there's active connection just update it instead of full restart
             if (currentConfig.mode is ConnectionMode.LocalAgent && config.mode is ConnectionMode.LocalAgent) {
-                if (currentConfig.peers != config.peers)
-                    updatePeers(config.peers)
+                activeConnection = activeConnection?.copy(currentConfig = config)
 
-                if (currentConfig.mode.settings != config.mode.settings)
-                    updateLocalAgentSettings(config.mode.settings)
+                val interfaceUpdate = if (config.interfaceConfig != currentConfig.interfaceConfig) {
+                    when (val establishResult = establishTun(config.interfaceConfig, builder)) {
+                        is EstablishTun.Result.Failure -> {
+                            clearConnection(VpnConnectionState.Disconnected(establishResult.reason))
+                            return
+                        }
+
+                        is EstablishTun.Result.Success -> {
+                            logger.log(LogLevel.INFO, "pvpn: Re-established VPN interface ${establishResult.fd}")
+                            TunStreamInfo.TunFd(establishResult.fd.detachFd())
+                        }
+                    }
+                } else {
+                    null
+                }
+
+                update(config.peers, config.mode.settings, interfaceUpdate)
 
                 if (currentConfig.packetCaptureInfo != config.packetCaptureInfo)
                     setPacketCaptureEnabled(config.packetCaptureInfo)
 
-                if (currentConfig.interfaceConfig != config.interfaceConfig)
-                    updateInterfaceConfig(config.interfaceConfig, builder)
-
-                activeConnection = activeConnection?.copy(currentConfig = config)
                 return
             }
 
@@ -183,7 +194,7 @@ internal class ConnectionManager(
                 is EstablishTun.Result.Success -> {
                     val newTunFd = establishResult.fd
                     logger.log(LogLevel.INFO, "pvpn: Re-established VPN interface ${newTunFd.fd}")
-                    ongoingConnection.connection.updateUnixTun(newTunFd.detachFd())
+                    ongoingConnection.connection.updateUnixTun(TunStreamInfo.TunFd(newTunFd.detachFd()))
                 }
             }
         }
@@ -195,6 +206,16 @@ internal class ConnectionManager(
 
     fun updateLocalAgentSettings(settings: LocalAgentSettings) {
         activeConnection?.connection?.updateLocalAgentSettings(settings.toUniFFI())
+    }
+
+    fun update(peersUpdate: List<Peer>?, settingsUpdate: LocalAgentSettings?, tunUpdate: TunStreamInfo?) {
+        activeConnection?.connection?.update(
+            ConfigUpdate(
+                peersUpdate?.toUniFFI(),
+                settingsUpdate?.toUniFFI(),
+                tunUpdate
+            )
+        )
     }
 
     fun provideApiForkSelector(selector: String) {

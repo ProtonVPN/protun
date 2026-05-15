@@ -15,24 +15,18 @@
 // You should have received a copy of the GNU General Public License
 // along with ProtonVPN.  If not, see <https://www.gnu.org/licenses/>.
 
-use crate::api::connection::PersistentCache;
-use crate::connection::mio::streams::MioStream;
+use crate::api::connection::{ConfigUpdate, PersistentCache, TunStreamInfo};
+use crate::connection::mio::streams::{MioStream, TunStreamUnixType};
 use crate::connection::pvpn_connection::PvpnDependencies;
 use crate::connection::time::{ClientMonotonicFactory, ClientRealtimeFactory};
 use crate::{
     api::connection::{Connection, EventCallback, InitialConnectionConfig, StateChangedCallback},
-    connection::{mio::{socket_factory_unix::SocketFactoryUnix, streams::MioStreams}, pvpn_client::PvpnClientImpl, pvpn_connection::PvpnMessage},
+    connection::{mio::{socket_factory_unix::SocketFactoryUnix, streams::MioStreams}, pvpn_client::PvpnClientImpl},
 };
 use mio::Poll;
 use pvpnclient::os_interface::rand::CryptoSeedProvider;
 use std::io;
 use pvpnclient::os_interface::time::{SinceEpoch, SystemTimeFactory};
-
-#[cfg(feature = "apple")]
-type TunStreamUnixType = crate::connection::mio::tun_apple::TunStreamApple;
-
-#[cfg(all(feature = "unix", not(feature = "apple")))]
-type TunStreamUnixType = crate::connection::mio::tun_unix::TunStreamUnix;
 
 #[cfg_attr(feature = "uniffi", uniffi::export)]
 impl Connection {
@@ -67,16 +61,13 @@ impl Connection {
 
     /// Notifies library that file descriptor for tun device has changed.
     #[cfg_attr(feature = "uniffi", uniffi::method)]
-    pub fn update_unix_tun(&self, tun_fd: Option<i32>) {
-        (self.send_pvpn_message)(PvpnMessage::UpdateTun(
-            Box::new(move || {
-                if let Some(tun_fd) = tun_fd {
-                    Some(Box::new(TunStreamUnixType::new(tun_fd)))
-                } else {
-                    None
-                }
-            }))
-        );
+    pub fn update_unix_tun(&self, tun_fd: TunStreamInfo) {
+        self.update(ConfigUpdate {
+            peers: None,
+            #[cfg(feature = "local-agent")]
+            settings: None,
+            tun: Some(tun_fd),
+        })
     }
 }
 

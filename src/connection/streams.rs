@@ -21,7 +21,7 @@ use pvpnclient::{Deadline, StreamId};
 use pvpnclient::action::SocketOption;
 use crate::api::state::{InterfaceError, InterfaceState};
 #[cfg(feature = "mio")]
-use crate::connection::CreateTunStream;
+use crate::api::connection::TunStreamInfo;
 
 /// Abstraction over a socket or tun device.
 pub(crate) trait Stream {
@@ -52,7 +52,7 @@ pub(crate) trait Streams {
 
     /// Update the tun stream.
     #[cfg(feature = "mio")]
-    fn update_tun(&mut self, create_tun_stream: CreateTunStream) -> io::Result<()>;
+    fn update_tun(&mut self, tun_info: TunStreamInfo) -> io::Result<()>;
 
     fn get_tun_interface_state(&self, last_interface_error: Option<InterfaceError>) -> InterfaceState;
 }

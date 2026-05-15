@@ -77,7 +77,19 @@ impl Connection {
     /// Method call might not necessarily result in new connection if suitable peer is already connected.
     #[cfg_attr(feature = "uniffi", uniffi::method)]
     pub fn update_peers(&self, peers: Vec<PeerInfo>) {
-        (self.send_pvpn_message)(PvpnMessage::UpdatePeers(peers));
+        self.update(ConfigUpdate {
+            peers: Some(peers),
+            #[cfg(feature = "local-agent")]
+            settings: None,
+            #[cfg(feature = "mio")]
+            tun: None,
+        })
+    }
+
+    /// Atomic update for peers, local agent settings and TUN. Use None to skip given update.
+    #[cfg_attr(feature = "uniffi", uniffi::method)]
+    pub fn update(&self, update: ConfigUpdate) {
+        (self.send_pvpn_message)(PvpnMessage::Update(update));
     }
 
     /// Call it when connectivity or underlying network adapter(s) change
@@ -129,7 +141,12 @@ impl Connection {
 
     #[cfg_attr(feature = "uniffi", uniffi::method)]
     pub fn update_local_agent_settings(&self, settings: LocalAgentSettings) {
-        (self.send_pvpn_message)(PvpnMessage::UpdateLocalAgentSettings(settings));
+        self.update(ConfigUpdate {
+            peers: None,
+            settings: Some(settings),
+            #[cfg(feature = "mio")]
+            tun: None
+        })
     }
 
     /// One-off call to get local agent stats - they will be delivered via [Event::LocalAgentStats].
@@ -274,4 +291,36 @@ pub enum PcapFile {
 pub enum FileWriteMode {
     Append,
     Overwrite,
+}
+
+#[cfg_attr(feature = "uniffi", derive(uniffi::Enum))]
+#[cfg(feature = "mio")]
+pub enum TunStreamInfo {
+    NoTun,
+    TunFd(i32),
+}
+
+#[cfg_attr(feature = "uniffi", derive(uniffi::Record))]
+pub struct ConfigUpdate {
+    pub peers: Option<Vec<PeerInfo>>,
+    #[cfg(feature = "local-agent")]
+    pub settings: Option<LocalAgentSettings>,
+    #[cfg(feature = "mio")]
+    pub tun: Option<TunStreamInfo>,
+}
+impl ConfigUpdate {
+    pub(crate) fn is_empty(&self) -> bool {
+        if self.peers.is_some() {
+            return false;
+        }
+        #[cfg(feature = "local-agent")]
+        if self.settings.is_some() {
+            return false;
+        }
+        #[cfg(feature = "mio")]
+        if self.tun.is_some() {
+            return false;
+        };
+        true
+    }
 }

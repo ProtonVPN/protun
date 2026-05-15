@@ -25,7 +25,7 @@ use pvpnclient::peer::Peer;
 use pvpnclient::vpn::{VpnProtocol, VpnStreamKind};
 use smallvec::SmallVec;
 #[cfg(feature = "mio")]
-use crate::connection::CreateTunStream;
+use crate::api::connection::TunStreamInfo;
 
 use crate::{
     api::{
@@ -35,7 +35,7 @@ use crate::{
     connection::{pvpn_client::PvpnClient, streams::{PendingWrite, PollResult, PollWaker, StreamResult, Streams, WouldBlock}},
     connection::time::RealtimeClock
 };
-use crate::api::connection::{PersistentCache, ConnectionMode, ConnectivityEvent, EventCallback, PcapFileInfo, StateChangedCallback, IpAddress, CacheKey};
+use crate::api::connection::{PersistentCache, ConnectionMode, ConnectivityEvent, EventCallback, PcapFileInfo, StateChangedCallback, IpAddress, CacheKey, ConfigUpdate};
 use crate::api::events::{CaptureStopReason, Event};
 use crate::api::state::{ConnectionState, InterfaceError, PeerConnectionWaitReason, VpnState};
 use crate::connection::network_recovery_handler::NetworkRecoveryHandler;
@@ -75,16 +75,11 @@ pub(crate) struct PvpnDependencies {
 pub(crate) enum PvpnMessage {
     /// Disconnect the stop the connection loop.
     Disconnect,
-    UpdatePeers(Vec<PeerInfo>),
     ConnectivityChange(ConnectivityEvent),
-    #[cfg(feature = "mio")]
-    UpdateTun(CreateTunStream),
     StartPacketCapture(PcapFileInfo),
     StopPacketCapture,
     RequestStats,
-
-    #[cfg(feature = "local-agent")]
-    UpdateLocalAgentSettings(LocalAgentSettings),
+    Update(ConfigUpdate),
     #[cfg(feature = "local-agent")]
     ProvideApiForkSelector(String),
     #[cfg(feature = "local-agent")]
@@ -155,6 +150,8 @@ struct PvpnConnection {
     pcap_stream: Option<PcapStream>,
     cache: Box<dyn PersistentCache>,
     #[cfg(feature = "local-agent")]
+    local_agent_settings: Option<LocalAgentSettings>,
+    #[cfg(feature = "local-agent")]
     local_agent_handler: Option<LocalAgentHandler>,
     realtime_clock: RealtimeClock,
 }
@@ -195,6 +192,8 @@ impl PvpnConnection {
             cache,
             #[cfg(feature = "local-agent")]
             local_agent_handler,
+            #[cfg(feature = "local-agent")]
+            local_agent_settings: local_agent_settings.clone(),
         };
         for peer in &ret.peers {
             ret.client.peer_add(peer.as_peer());
@@ -260,20 +259,9 @@ impl PvpnConnection {
                     self.should_stop = true;
                     break;
                 },
-                PvpnMessage::UpdatePeers(peers) => {
-                    self.update_peers(peers);
-                },
                 PvpnMessage::ConnectivityChange(event) => {
                     let tunnel_info = self.client.get_tunnel_info();
                     self.on_connectivity_change(event, &tunnel_info);
-                },
-                #[cfg(feature = "mio")]
-                PvpnMessage::UpdateTun(create_tun_stream) => {
-                    if let Err(e) = self.streams.update_tun(create_tun_stream) {
-                        log::error!("failed to update tun: {:?}", e);
-                    } else {
-                        self.current_tun_error = None;
-                    }
                 },
                 PvpnMessage::StartPacketCapture(file_info) => {
                     self.start_packet_capture(file_info);
@@ -287,9 +275,21 @@ impl PvpnConnection {
                         self.emit_event(Event::from_tunnel_stats(stats, timestamp_ms));
                     }
                 }
-                #[cfg(feature = "local-agent")]
-                PvpnMessage::UpdateLocalAgentSettings(session_settings) => {
-                    self.client.set_settings(pvpn_settings(session_settings.into()));
+                PvpnMessage::Update(update) => {
+                    if update.is_empty() {
+                        log::warn!("received empty update message");
+                    }
+                    if let Some(peers) = update.peers {
+                        self.update_peers(SanitizedPeers::from(peers));
+                    }
+                    #[cfg(feature = "local-agent")]
+                    if let Some(settings) = update.settings {
+                        self.update_local_agent_settings(settings);
+                    }
+                    #[cfg(feature = "mio")]
+                    if let Some(tun_info) = update.tun {
+                        self.update_tun(tun_info);
+                    }
                 }
                 #[cfg(feature = "local-agent")]
                 PvpnMessage::ProvideApiForkSelector(fork_selector) => {
@@ -572,6 +572,18 @@ impl PvpnConnection {
         }
     }
 
+    #[cfg(feature = "local-agent")]
+    fn update_local_agent_settings(&mut self, settings: LocalAgentSettings) {
+        if let Some(current_settings) = &self.local_agent_settings {
+            if *current_settings != settings {
+                self.local_agent_settings = Some(settings.clone());
+                self.client.set_settings(pvpn_settings(settings.into()));
+            }
+        } else {
+            log::warn!("update_local_agent_settings called in non-local-agent mode");
+        }
+    }
+
     fn update_peers(&mut self, new_peers: SanitizedPeers) {
         if self.peers == new_peers {
             return;
@@ -587,6 +599,15 @@ impl PvpnConnection {
             }
         }
         self.peers = new_peers;
+    }
+
+    #[cfg(feature = "mio")]
+    fn update_tun(&mut self, tun_info: TunStreamInfo) {
+        if let Err(e) = self.streams.update_tun(tun_info) {
+            log::error!("failed to update tun: {:?}", e);
+        } else {
+            self.current_tun_error = None;
+        }
     }
 
     fn set_state(&mut self, connection_state: ConnectionState) {
