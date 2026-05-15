@@ -39,7 +39,7 @@ pub struct WgClientPrivateKey(pub [u8; CLIENT_PRIV_KEY_SIZE_BYTES]);
 pub struct IpAddress(pub IpAddr);
 
 /// [PEER_PUB_KEY_SIZE_BYTES] bytes long peer public key.
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct WgPeerPublicKey(pub [u8; PEER_PUB_KEY_SIZE_BYTES]);
 
 /// Represents an active VPN connection.
@@ -236,7 +236,7 @@ where
 
 /// Represents a candidate peer for connection.
 #[cfg_attr(feature = "uniffi", derive(uniffi::Record))]
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct PeerInfo {
     /// Unique identifier of connected peer (as defined by client). This id will be available in
     /// connection states when given peer is connecting/connected (see peer_id in [VpnState]).

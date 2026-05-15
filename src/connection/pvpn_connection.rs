@@ -40,6 +40,7 @@ use crate::api::events::{CaptureStopReason, Event};
 use crate::api::state::{ConnectionState, InterfaceError, PeerConnectionWaitReason, VpnState};
 use crate::connection::network_recovery_handler::NetworkRecoveryHandler;
 use crate::connection::pcap_stream::PcapStream;
+use crate::connection::sanitized_peers::SanitizedPeers;
 
 #[cfg(feature = "local-agent")]
 use crate::{
@@ -146,7 +147,7 @@ struct PvpnConnection {
     event_callback: Box<dyn EventCallback>,
     message_receiver: mpsc::Receiver<PvpnMessage>,
     connection_state: ConnectionState,
-    peers: Vec<PeerInfo>,
+    peers: SanitizedPeers,
     stream_read_buffer: Box<[u8; STREAM_BUFFER_SIZE]>,
     should_stop: bool,
     current_tun_error: Option<InterfaceError>,
@@ -184,7 +185,7 @@ impl PvpnConnection {
             event_callback,
             message_receiver,
             connection_state: ConnectionState::Disconnected { error: None },
-            peers,
+            peers: SanitizedPeers::from(peers),
             stream_read_buffer: Box::new([0; STREAM_BUFFER_SIZE]),
             should_stop: false,
             current_tun_error: None,
@@ -195,7 +196,9 @@ impl PvpnConnection {
             #[cfg(feature = "local-agent")]
             local_agent_handler,
         };
-        ret.activate_peers();
+        for peer in &ret.peers {
+            ret.client.peer_add(peer.as_peer());
+        }
         if !ret.network_recovery_handler.is_network_available() {
             ret.client.notify_network_down();
             ret.set_state(
@@ -569,18 +572,21 @@ impl PvpnConnection {
         }
     }
 
-    fn update_peers(&mut self, new_peers: Vec<PeerInfo>) {
-        for peer in &self.peers {
-            self.client.peer_remove(peer.addr());
+    fn update_peers(&mut self, new_peers: SanitizedPeers) {
+        if self.peers == new_peers {
+            return;
+        }
+        for old_peer in &self.peers {
+            if !new_peers.contains(old_peer) {
+                self.client.peer_remove(old_peer.addr());
+            }
+        }
+        for new_peer in &new_peers {
+            if !self.peers.contains(new_peer) {
+                self.client.peer_add(new_peer.as_peer());
+            }
         }
         self.peers = new_peers;
-        self.activate_peers();
-    }
-
-    fn activate_peers(&mut self) {
-        for peer in &self.peers {
-            self.client.peer_add(peer.as_peer());
-        }
     }
 
     fn set_state(&mut self, connection_state: ConnectionState) {

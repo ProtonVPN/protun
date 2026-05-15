@@ -17,3 +17,4 @@
 
 mod local_agent_handler_tests;
 mod network_recovery_handler_tests;
+mod util_tests;
