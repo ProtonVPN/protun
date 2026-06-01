@@ -110,7 +110,7 @@ internal class ProTunVpnService : VpnService() {
         if (!DependencyContainer.isInitialized)
             return START_NOT_STICKY
 
-        logger.log(LogLevel.INFO, "ProTunVpnService onStartCommand, intent: $intent, flags: $flags, startId: $startId")
+        logger.log(LogLevel.INFO, "ProTunVpnService onStartCommand, action: ${intent?.action}, flags: $flags, startId: $startId")
         val startSticky = when {
             intent == null -> {
                 handleProcessRestore()
@@ -126,6 +126,7 @@ internal class ProTunVpnService : VpnService() {
                 startForeground(notifications.notificationId, notifications.buildNotification(this, manager.state.value))
 
                 val vpnAction = requireNotNull(intent.getParcelableExtra<VpnAction>(VPN_ACTION_EXTRA))
+                logger.log(LogLevel.INFO, "vpn action: ${vpnAction.javaClass.simpleName}")
                 when (vpnAction) {
                     is VpnAction.Connect -> {
                         manager.connect(vpnAction.config, Builder(), socketProtectCallback, eventCallback)

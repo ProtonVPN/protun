@@ -21,12 +21,15 @@ package me.proton.vpn.core.service.usecases
 
 import android.content.Context
 import android.net.ConnectivityManager
+import android.net.LinkProperties
 import android.net.Network
 import android.net.NetworkCapabilities
 import android.net.NetworkRequest
 import androidx.core.content.getSystemService
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
+import me.proton.vpn.core.api.Logger
+import uniffi.protun.LogLevel
 
 internal interface NetworkObserver {
     val validatedNetworks: StateFlow<Set<Network>>
@@ -34,6 +37,7 @@ internal interface NetworkObserver {
 
 internal class NetworkObserverImpl(
     appContext: Context,
+    private val logger: Logger,
 ) : NetworkObserver {
 
     private val connectivityManager = appContext.getSystemService<ConnectivityManager>()
@@ -71,9 +75,29 @@ internal class NetworkObserverImpl(
             capabilities != null &&
             capabilities.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET) &&
             capabilities.hasCapability(NetworkCapabilities.NET_CAPABILITY_VALIDATED)
-        if (validatedNetwork)
-            validatedNetworks.value += network
-        else
+        if (validatedNetwork) {
+            if (network !in validatedNetworks.value) {
+                val linkProperties = connectivityManager?.getLinkProperties(network)
+                logger.logNetwork(network, capabilities, linkProperties)
+                validatedNetworks.value += network
+            }
+        } else {
             validatedNetworks.value -= network
+        }
     }
+}
+
+fun Logger.logNetwork(
+    network: Network,
+    capabilities: NetworkCapabilities,
+    linkProperties: LinkProperties?
+) {
+    val isVpn = capabilities.hasTransport(NetworkCapabilities.TRANSPORT_VPN)
+    val type = when {
+        capabilities.hasTransport(NetworkCapabilities.TRANSPORT_WIFI) -> "WiFi"
+        capabilities.hasTransport(NetworkCapabilities.TRANSPORT_CELLULAR) -> "Mobile"
+        capabilities.hasTransport(NetworkCapabilities.TRANSPORT_ETHERNET) -> "Ethernet"
+        else -> "Other"
+    }
+    log(LogLevel.INFO, "NetworkObserver: network validated $network $type, VPN: $isVpn, addresses: ${linkProperties?.linkAddresses}")
 }

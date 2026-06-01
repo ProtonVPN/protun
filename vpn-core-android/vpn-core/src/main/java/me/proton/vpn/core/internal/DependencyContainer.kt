@@ -102,7 +102,7 @@ internal object DependencyContainer {
 
     // Lazy-initialized internal dependencies
     private val networkObserver: NetworkObserver by lazy {
-        NetworkObserverImpl(appContext)
+        NetworkObserverImpl(appContext, logger)
     }
 
     private val establishTun: EstablishTun by lazy {
