@@ -242,37 +242,54 @@ fn jail_after_connecting_to_local_agent() {
 #[test_log::test]
 fn local_agent_get_stats() {
     let connected_id = "connected";
-    let stats_id = "stats";
-
-    // Inject a Stats reply with one of each NetShield bucket populated.
-    let mut netshield = std::collections::HashMap::new();
-    netshield.insert(NetshieldBlockList::Malicious, 1);
-    netshield.insert(NetshieldBlockList::Adult, 2);
-    let stats = Stats {
-        bytes_received: Some(1234),
-        bytes_sent: Some(5678),
-        netshield_dnsbl: Some(netshield),
-    };
+    let stats_id_1 = "stats1";
+    let stats_id_2 = "stats2";
+    let stats_id_3 = "stats3";
+    let stats_id_4 = "stats4";
+    let stats_id_5 = "stats5";
+    let stats_id_6 = "stats6";
 
     let messages = HashMap::from([
         (connected_id.to_string(), LocalAgentMessage::LocalAgentConnected),
-        (stats_id.to_string(), LocalAgentMessage::Value(LocalAgentValue::Stats(Some(stats))))
+        (stats_id_1.to_string(), LocalAgentMessage::Value(LocalAgentValue::StatsBytesReceived(Some(1234.into())))),
+        (stats_id_2.to_string(), LocalAgentMessage::Value(LocalAgentValue::StatsBytesSent(Some(5678.into())))),
+        (stats_id_3.to_string(), LocalAgentMessage::Value(LocalAgentValue::StatsNetshieldBlockCountMalicious(Some(1.into())))),
+        (stats_id_4.to_string(), LocalAgentMessage::Value(LocalAgentValue::StatsNetshieldBlockCountAds(None))),
+        (stats_id_5.to_string(), LocalAgentMessage::Value(LocalAgentValue::StatsNetshieldBlockCountTracking(None))),
+        (stats_id_6.to_string(), LocalAgentMessage::Value(LocalAgentValue::StatsNetshieldBlockCountAdult(Some(2.into())))),
     ]);
 
     // Establish WG connection.
-    let (mut handles, mut server_sock, client_addr) = connect_with_udp_for_local_agent(messages);
+    let (mut handles, server_sock, client_addr) = connect_with_udp_for_local_agent(messages);
 
     let establish_data = DummyProtocolPacket::LocalAgentMessage { id: connected_id.to_string() };
-    handles.helper.send_udp_to(&mut server_sock, &client_addr, &establish_data).unwrap();
+    handles.helper.send_udp_to(&server_sock, &client_addr, &establish_data).unwrap();
 
     handles.helper.connection.request_local_agent_stats();
     thread::sleep(Duration::from_millis(5));
-    let action = handles.script.get_last_action();
-    assert!(matches!(action.unwrap(), LocalAgentAction::Get(LocalAgentSelector::Stats)));
+
+    let mut expected_selectors = HashSet::from([
+        LocalAgentSelector::StatsBytesSent,
+        LocalAgentSelector::StatsBytesReceived,
+        LocalAgentSelector::StatsNetshieldBlockCountAds,
+        LocalAgentSelector::StatsNetshieldBlockCountMalicious,
+        LocalAgentSelector::StatsNetshieldBlockCountTracking,
+        LocalAgentSelector::StatsNetshieldBlockCountAdult,
+    ]);
+    while !expected_selectors.is_empty() {
+        let action = handles.script.get_last_action().unwrap();
+        let LocalAgentAction::Get(selector) = action else {
+            panic!("expect Get");
+        };
+        assert!(expected_selectors.contains(&selector));
+        expected_selectors.remove(&selector);
+    }
 
     // Send stats reply
-    let stats_data = DummyProtocolPacket::LocalAgentMessage { id: stats_id.to_string() };
-    handles.helper.send_udp_to(&mut server_sock, &client_addr, &stats_data).unwrap();
+    for id in [stats_id_1, stats_id_2, stats_id_3, stats_id_4, stats_id_5, stats_id_6 ] {
+        let stats_data = DummyProtocolPacket::LocalAgentMessage { id: id.to_string() };
+        handles.helper.send_udp_to(&server_sock, &client_addr, &stats_data).unwrap();
+    }
 
     handles.helper.expect_event(|event| matches!(event,
         Event::LocalAgentStats {

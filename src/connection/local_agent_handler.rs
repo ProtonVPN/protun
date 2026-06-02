@@ -15,13 +15,57 @@
 // You should have received a copy of the GNU General Public License
 // along with ProtonVPN.  If not, see <https://www.gnu.org/licenses/>.
 
-use std::collections::HashMap;
-use proton_vpn_local_agent::types::{HandledJail, NetshieldBlockList, ToHandleJail};
+use proton_vpn_local_agent::types::{HandledJail, ToHandleJail};
 use crate::api::local_agent::{AgentConnectionInfo, Restriction, WaitJailReason};
 use crate::api::state::{AgentConnectionWaitReason, ConnectionState, PeerConnectionInfo};
 use pvpnclient::{LocalAgentSelector, LocalAgentValue};
 use pvpnclient::{Jail, Jails, LocalAgentError, LocalAgentMessage, LocalAgentServerError, UnixTimestamp};
 use crate::api::events::{ErrorEvent, Event, LocalAgentSettingType};
+
+/// Create an accumulator for the stats. The goal is to collect all the information that we need
+/// and then emit a single event once everything is collected.
+macro_rules! create_stats_accumulator {
+    ( $($field:ident),+ $(,)? ) => {
+        #[derive(Default, Debug)]
+        struct LocalAgentStatsAccumulator {
+            $( $field: Option<Option<u64>>, )+
+        }
+
+        impl LocalAgentStatsAccumulator {
+            $( create_accumulate_fn!($field); )+
+
+            fn emit_event_when_full(&mut self) -> Option<Event> {
+                match ( $( self.$field, )+ ) {
+                    ( $( Some($field), )+ ) => {
+                        let mut stats = Event::LocalAgentStats {
+                            $( $field, )+
+                            data_saved: None,
+                        };
+                        update_local_agent_stats_with_estimates(&mut stats);
+                        self.reset();
+                        Some(stats)
+                    },
+                    _ => None
+                }
+            }
+
+            fn reset(&mut self) {
+                $( self.$field = None; )+
+            }
+        }
+    }
+}
+
+macro_rules! create_accumulate_fn {
+    ($field:ident) => {
+        pub fn $field(&mut self, val: Option<u64>) -> Option<Event> {
+            self.$field = Some(val);
+            self.emit_event_when_full()
+        }
+    };
+}
+
+create_stats_accumulator!(bytes_received, bytes_sent, malicious_blocked, ads_blocked, trackers_blocked, adult_content_blocked);
 
 pub(crate) struct LocalAgentHandler {
     is_connected: bool,
@@ -31,6 +75,7 @@ pub(crate) struct LocalAgentHandler {
     exit_label: Option<String>,
     jails: Vec<WaitJailReason>,
     restrictions: Vec<Restriction>,
+    local_agent_stats: LocalAgentStatsAccumulator
 }
 
 impl LocalAgentHandler {
@@ -43,6 +88,7 @@ impl LocalAgentHandler {
             established_ts: None,
             jails: Vec::new(),
             restrictions: Vec::new(),
+            local_agent_stats: Default::default(),
         }
     }
 
@@ -79,6 +125,7 @@ impl LocalAgentHandler {
             self.jails.clear();
         }
         self.last_peer = Some(new_peer);
+        self.local_agent_stats.reset();
     }
     
     pub(crate) fn handle_message(&mut self, message: LocalAgentMessage) -> Option<Event> {
@@ -157,18 +204,26 @@ impl LocalAgentHandler {
             LocalAgentValue::SettingsSplitTcp(value) =>
                 self.agent_info.settings.split_tcp = value.map(|v| v.0),
 
-            LocalAgentValue::StatsBytesReceived(_) |
-            LocalAgentValue::StatsBytesSent(_) => {} // handled in LocalAgentValue::Stats
+            LocalAgentValue::StatsBytesReceived(val) => {
+                return self.local_agent_stats.bytes_received(val.map(|v| v.0));
+            }
+            LocalAgentValue::StatsBytesSent(val) => {
+                return self.local_agent_stats.bytes_sent(val.map(|v| v.0));
+            }
+            LocalAgentValue::StatsNetshieldBlockCountMalicious(val) => {
+                return self.local_agent_stats.malicious_blocked(val.map(|v| v.0));
+            }
+            LocalAgentValue::StatsNetshieldBlockCountAds(val) => {
+                return self.local_agent_stats.ads_blocked(val.map(|v| v.0));
+            }
+            LocalAgentValue::StatsNetshieldBlockCountTracking(val) => {
+                return self.local_agent_stats.trackers_blocked(val.map(|v| v.0));
+            }
+            LocalAgentValue::StatsNetshieldBlockCountAdult(val) => {
+                return self.local_agent_stats.adult_content_blocked(val.map(|v| v.0));
+            }
 
-            LocalAgentValue::StatsNetshieldBlockCountMalicious(_) => {}
-            LocalAgentValue::StatsNetshieldBlockCountAds(_) => {}
-            LocalAgentValue::StatsNetshieldBlockCountTracking(_) => {}
-            LocalAgentValue::StatsNetshieldBlockCountAdult(_) => {} // handled in LocalAgentValue::Stats
-
-            LocalAgentValue::Stats(value) =>
-                if let Some(stats) = value {
-                    return Some(stats.into())
-                },
+            LocalAgentValue::Stats(_) => (), // will be removed
 
             //TODO(VPNCORE-108): implement when ready in libvpnclient
             //LocalAnentValue::ExitInfo(_)
@@ -297,51 +352,26 @@ fn policy_refused(setting: LocalAgentSettingType) -> Option<Event> {
     Some(Event::Error { error: ErrorEvent::LocalAgentSettingPolicyRefused { setting } })
 }
 
-impl From<proton_vpn_local_agent::types::Stats> for Event {
-    fn from(stats: proton_vpn_local_agent::types::Stats) -> Self {
-        let malicious_blocked = get_netshield_stats(&stats.netshield_dnsbl, &NetshieldBlockList::Malicious);
-        let ads_blocked = get_netshield_stats(&stats.netshield_dnsbl, &NetshieldBlockList::Ads);
-        let trackers_blocked = get_netshield_stats(&stats.netshield_dnsbl, &NetshieldBlockList::Tracking);
-        let adult_content_blocked = get_netshield_stats(&stats.netshield_dnsbl, &NetshieldBlockList::Adult);
-        Event::LocalAgentStats {
-            bytes_received: stats.bytes_received,
-            bytes_sent: stats.bytes_sent,
-            malicious_blocked,
-            ads_blocked,
-            trackers_blocked,
-            adult_content_blocked,
-            data_saved: Some(estimate_data_saved(malicious_blocked, ads_blocked, trackers_blocked, adult_content_blocked)),
-        }
-    }
-}
-
-fn get_netshield_stats(stats: &Option<HashMap<NetshieldBlockList, u64>>, list: &NetshieldBlockList) -> Option<u64> {
-    stats.as_ref().map(|bl| bl.get(list).cloned()).flatten()
-}
-
 const AVG_AD_SIZE_BYTES: u64 = 200 * 1024;
 const AVG_TRACKER_SIZE_BYTES: u64 = 50 * 1024;
 const AVG_MALICIOUS_SIZE_BYTES: u64 = 750 * 1024;
 const AVG_ADULT_CONTENT_SIZE_BYTES: u64 = 1454 * 1024;
 
-fn estimate_data_saved(
-    malicious_blocked: Option<u64>,
-    ads_blocked: Option<u64>,
-    trackers_blocked: Option<u64>,
-    adult_content_blocked: Option<u64>,
-) -> u64 {
-    let mut saved = 0;
-    if let Some(malicious_blocked) = malicious_blocked {
-        saved += malicious_blocked * AVG_MALICIOUS_SIZE_BYTES;
+fn update_local_agent_stats_with_estimates(event: &mut Event) {
+    if let Event::LocalAgentStats { malicious_blocked, ads_blocked, trackers_blocked, adult_content_blocked, data_saved, .. } = event {
+        let mut saved = 0;
+        if let Some(malicious_blocked) = malicious_blocked {
+            saved += *malicious_blocked * AVG_MALICIOUS_SIZE_BYTES;
+        }
+        if let Some(ads_blocked) = ads_blocked {
+            saved += *ads_blocked * AVG_AD_SIZE_BYTES;
+        };
+        if let Some(trackers_blocked) = trackers_blocked {
+            saved += *trackers_blocked * AVG_TRACKER_SIZE_BYTES;
+        };
+        if let Some(adult_content_blocked) = adult_content_blocked {
+            saved += *adult_content_blocked * AVG_ADULT_CONTENT_SIZE_BYTES;
+        };
+        *data_saved = Some(saved);
     }
-    if let Some(ads_blocked) = ads_blocked {
-        saved += ads_blocked * AVG_AD_SIZE_BYTES;
-    };
-    if let Some(trackers_blocked) = trackers_blocked {
-        saved += trackers_blocked * AVG_TRACKER_SIZE_BYTES;
-    };
-    if let Some(adult_content_blocked) = adult_content_blocked {
-        saved += adult_content_blocked * AVG_ADULT_CONTENT_SIZE_BYTES;
-    };
-    saved
 }

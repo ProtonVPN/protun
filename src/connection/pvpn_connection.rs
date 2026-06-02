@@ -49,6 +49,17 @@ use crate::{
 #[cfg(feature = "local-agent")]
 use pvpnclient::{LocalAgentAction, LocalAgentSelector, SessionSettings};
 
+/// Those are the selectors of all the fields we are interested in when fetching the stats
+#[cfg(feature = "local-agent")]
+const STATS_SELECTORS: &[LocalAgentSelector] = &[
+    LocalAgentSelector::StatsBytesSent,
+    LocalAgentSelector::StatsBytesReceived,
+    LocalAgentSelector::StatsNetshieldBlockCountAds,
+    LocalAgentSelector::StatsNetshieldBlockCountMalicious,
+    LocalAgentSelector::StatsNetshieldBlockCountTracking,
+    LocalAgentSelector::StatsNetshieldBlockCountAdult,
+];
+
 pub(crate) struct PvpnDependencies {
     pub config: InitialConnectionConfig,
     pub streams: Box<dyn Streams>,
@@ -284,7 +295,9 @@ impl PvpnConnection {
                 }
                 #[cfg(feature = "local-agent")]
                 PvpnMessage::RequestLocalAgentStats => {
-                    self.client.push_local_agent(LocalAgentAction::Get(LocalAgentSelector::Stats));
+                    for selector in STATS_SELECTORS {
+                        self.client.push_local_agent(LocalAgentAction::Get(*selector));
+                    }
                 }
             }
         }
