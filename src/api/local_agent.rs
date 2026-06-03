@@ -38,6 +38,8 @@ pub enum NetshieldLevel {
     MalwareFilter,
     /// Netshield filters Malware, Ads and Trackers
     AdsAndMalwareFilter,
+    /// Netshield filters Malware, Ads, Trackers and Adult
+    AdultAndAdsAndMalwareFilter
 }
 
 /// Information available after successful connection to the local agent. None field values

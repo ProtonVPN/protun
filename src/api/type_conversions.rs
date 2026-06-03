@@ -137,6 +137,7 @@ impl From<NetshieldLevel> for pvpnclient::NetshieldLevel {
             NetshieldLevel::None => pvpnclient::NetshieldLevel::None,
             NetshieldLevel::MalwareFilter => pvpnclient::NetshieldLevel::MalwareFilter,
             NetshieldLevel::AdsAndMalwareFilter => pvpnclient::NetshieldLevel::AdsAndMalwareFilter,
+            NetshieldLevel::AdultAndAdsAndMalwareFilter => pvpnclient::NetshieldLevel::AdultAndAdsAndMalwareFilter,
         }
     }
 }
@@ -148,6 +149,7 @@ impl From<pvpnclient::NetshieldLevel> for NetshieldLevel {
             pvpnclient::NetshieldLevel::None => NetshieldLevel::None,
             pvpnclient::NetshieldLevel::MalwareFilter => NetshieldLevel::MalwareFilter,
             pvpnclient::NetshieldLevel::AdsAndMalwareFilter => NetshieldLevel::AdsAndMalwareFilter,
+            pvpnclient::NetshieldLevel::AdultAndAdsAndMalwareFilter => NetshieldLevel::AdultAndAdsAndMalwareFilter,
         }
     }
 }

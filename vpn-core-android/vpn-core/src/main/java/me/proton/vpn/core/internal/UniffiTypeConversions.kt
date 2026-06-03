@@ -95,6 +95,7 @@ fun NetShieldLevel.toUniFFI(): uniffi.protun.NetshieldLevel = when (this) {
     NetShieldLevel.None -> uniffi.protun.NetshieldLevel.NONE
     NetShieldLevel.MalwareFilter -> uniffi.protun.NetshieldLevel.MALWARE_FILTER
     NetShieldLevel.AdsAndMalwareFilter -> uniffi.protun.NetshieldLevel.ADS_AND_MALWARE_FILTER
+    NetShieldLevel.AdultAndAdsAndMalwareFilter -> uniffi.protun.NetshieldLevel.ADULT_AND_ADS_AND_MALWARE_FILTER
 }
 
 fun PeerConnectionInfo.toCoreApi(): PeerConnection =
@@ -216,6 +217,7 @@ fun uniffi.protun.NetshieldLevel.toCoreApi(): NetShieldLevel = when (this) {
     uniffi.protun.NetshieldLevel.NONE -> NetShieldLevel.None
     uniffi.protun.NetshieldLevel.MALWARE_FILTER -> NetShieldLevel.MalwareFilter
     uniffi.protun.NetshieldLevel.ADS_AND_MALWARE_FILTER -> NetShieldLevel.AdsAndMalwareFilter
+    uniffi.protun.NetshieldLevel.ADULT_AND_ADS_AND_MALWARE_FILTER -> NetShieldLevel.AdultAndAdsAndMalwareFilter
 }
 
 fun uniffi.protun.LocalAgentSettingType.toCoreApi(): LocalAgentSettingType = when (this) {

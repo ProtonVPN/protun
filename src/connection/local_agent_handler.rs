@@ -15,10 +15,9 @@
 // You should have received a copy of the GNU General Public License
 // along with ProtonVPN.  If not, see <https://www.gnu.org/licenses/>.
 
-use proton_vpn_local_agent::types::{HandledJail, ToHandleJail};
 use crate::api::local_agent::{AgentConnectionInfo, Restriction, WaitJailReason};
 use crate::api::state::{AgentConnectionWaitReason, ConnectionState, PeerConnectionInfo};
-use pvpnclient::{LocalAgentSelector, LocalAgentValue};
+use pvpnclient::{HandledJail, LocalAgentSelector, LocalAgentValue, ToHandleJail};
 use pvpnclient::{Jail, Jails, LocalAgentError, LocalAgentMessage, LocalAgentServerError, UnixTimestamp};
 use crate::api::events::{ErrorEvent, Event, LocalAgentSettingType};
 
@@ -149,7 +148,7 @@ impl LocalAgentHandler {
             LocalAgentSelector::InfoGroups,
             // LocalAgentSelector::InfoPlatform,
             LocalAgentSelector::InfoRemote,
-            //LocalAgentSelector::Restrictions, //TODO(VPNCORE-112): causes connection error when watched
+            LocalAgentSelector::Restrictions,
             LocalAgentSelector::SettingsCircumventionRouting,
             LocalAgentSelector::SettingsLabel,
             LocalAgentSelector::SettingsNetshieldLevel,
@@ -172,8 +171,19 @@ impl LocalAgentHandler {
 
             LocalAgentValue::InfoPlatform(_) => {} // not used for now
 
-            LocalAgentValue::InfoRemote(value) =>
-                self.agent_info.user_isp_ip = value.map(|v| v.0),
+            LocalAgentValue::InfoRemote(value) => {
+                // Unused for now. This is the addres as seen by VPN sever, can be a relay
+            }
+            LocalAgentValue::InfoRemoteReal(address) =>
+                self.agent_info.user_isp_ip = address.map(|v| v.0),
+
+            LocalAgentValue::InfoRemoteRealLocationCode(code) =>
+                self.agent_info.user_isp_country_code = code.map(|v| v.0),
+
+            LocalAgentValue::InfoExitIpv4(address) =>
+                self.agent_info.server_exit_v4 = address.map(|v| v.first().cloned()).flatten(),
+            LocalAgentValue::InfoExitIpv6(address) =>
+                self.agent_info.server_exit_v6 = address.map(|v| v.first().cloned()).flatten(),
 
             LocalAgentValue::Restrictions(restrictions) => {
                 self.restrictions = if let Some(restrictions)  = restrictions {
@@ -224,9 +234,6 @@ impl LocalAgentHandler {
             }
 
             LocalAgentValue::Stats(_) => (), // will be removed
-
-            //TODO(VPNCORE-108): implement when ready in libvpnclient
-            //LocalAnentValue::ExitInfo(_)
 
             LocalAgentValue::Jails(jails) =>
                 return self.handle_jails(jails),
@@ -341,6 +348,8 @@ impl LocalAgentHandler {
 
                     LocalAgentServerError::Other(message) =>
                         log::warn!("Server error: {}", message),
+                    LocalAgentServerError::UnknownField =>
+                        log::warn!("Server error: unknown field"),
                 }
             }
         }

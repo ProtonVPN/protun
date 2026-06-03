@@ -164,7 +164,7 @@ data class LocalAgentSettings(
 ) : Parcelable
 
 enum class NetShieldLevel {
-    None, MalwareFilter, AdsAndMalwareFilter
+    None, MalwareFilter, AdsAndMalwareFilter, AdultAndAdsAndMalwareFilter
 }
 
 /**
