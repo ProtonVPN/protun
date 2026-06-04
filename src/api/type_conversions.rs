@@ -155,14 +155,14 @@ impl From<pvpnclient::NetshieldLevel> for NetshieldLevel {
 }
 
 #[cfg(feature = "local-agent")]
-impl From<proton_vpn_local_agent::types::Restriction> for Restriction {
-    fn from(value: proton_vpn_local_agent::types::Restriction) -> Self {
+impl From<pvpnclient::Restriction> for Restriction {
+    fn from(value: pvpnclient::Restriction) -> Self {
         match value {
-            proton_vpn_local_agent::types::Restriction::Streaming(reason) =>
+            pvpnclient::Restriction::Streaming(reason) =>
                 Restriction::Streaming { reason },
-            proton_vpn_local_agent::types::Restriction::Torrent(reason) =>
+            pvpnclient::Restriction::Torrent(reason) =>
                 Restriction::Torrent { reason },
-            proton_vpn_local_agent::types::Restriction::Other { name, reason } =>
+            pvpnclient::Restriction::Other { name, reason } =>
                 Restriction::Other { name, reason },
         }
     }

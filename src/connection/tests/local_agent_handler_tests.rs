@@ -19,8 +19,7 @@ use crate::api::local_agent::NetshieldLevel;
 use std::collections::HashSet;
 use std::net::IpAddr;
 use std::str::FromStr;
-use proton_vpn_local_agent::types::RedisBoolean;
-use pvpnclient::{HandledJail, ToHandleJail, UnixTimestamp, Jail, Jails, LocalAgentError, LocalAgentMessage, LocalAgentValue};
+use pvpnclient::{HandledJail, ToHandleJail, Jail, Jails, LocalAgentError, LocalAgentMessage, LocalAgentValue};
 use crate::api::connection::IpAddress;
 use crate::api::events::{ErrorEvent, Event};
 use crate::api::local_agent::WaitJailReason;
@@ -47,7 +46,7 @@ fn established_transitions_to_connected() {
 fn connecting_when_soft_jailed() {
     let mut handler = LocalAgentHandler::new();
     handler.handle_message(LocalAgentMessage::LocalAgentConnected);
-    handler.handle_message(LocalAgentMessage::Value(LocalAgentValue::SettingsSoftjail(Some(RedisBoolean(true)))));
+    handler.handle_message(LocalAgentMessage::Value(LocalAgentValue::SettingsSoftjail(Some(true))));
     assert!(matches!(
         handler.get_state(peer("1.2.3.4")),
         ConnectionState::ConnectingToLocalAgent {
@@ -157,8 +156,4 @@ fn peer(ip: &str) -> PeerConnectionInfo {
         protocol: Protocol::WireguardUdp,
         port: 1234,
     }
-}
-
-fn timestamp() -> UnixTimestamp {
-    UnixTimestamp::from_str("0").unwrap()
 }

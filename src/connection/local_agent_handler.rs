@@ -15,10 +15,12 @@
 // You should have received a copy of the GNU General Public License
 // along with ProtonVPN.  If not, see <https://www.gnu.org/licenses/>.
 
+use std::time::SystemTime;
 use crate::api::local_agent::{AgentConnectionInfo, Restriction, WaitJailReason};
 use crate::api::state::{AgentConnectionWaitReason, ConnectionState, PeerConnectionInfo};
 use pvpnclient::{HandledJail, LocalAgentSelector, LocalAgentValue, ToHandleJail};
-use pvpnclient::{Jail, Jails, LocalAgentError, LocalAgentMessage, LocalAgentServerError, UnixTimestamp};
+use pvpnclient::{Jail, Jails, LocalAgentError, LocalAgentMessage, LocalAgentServerError};
+use crate::api::connection::IpAddress;
 use crate::api::events::{ErrorEvent, Event, LocalAgentSettingType};
 
 /// Create an accumulator for the stats. The goal is to collect all the information that we need
@@ -70,7 +72,7 @@ pub(crate) struct LocalAgentHandler {
     is_connected: bool,
     last_peer: Option<PeerConnectionInfo>,
     agent_info: AgentConnectionInfo,
-    established_ts: Option<UnixTimestamp>,
+    established_ts: Option<SystemTime>,
     exit_label: Option<String>,
     jails: Vec<WaitJailReason>,
     restrictions: Vec<Restriction>,
@@ -171,19 +173,19 @@ impl LocalAgentHandler {
 
             LocalAgentValue::InfoPlatform(_) => {} // not used for now
 
-            LocalAgentValue::InfoRemote(value) => {
+            LocalAgentValue::InfoRemote(_) => {
                 // Unused for now. This is the addres as seen by VPN sever, can be a relay
             }
             LocalAgentValue::InfoRemoteReal(address) =>
-                self.agent_info.user_isp_ip = address.map(|v| v.0),
+                self.agent_info.user_isp_ip = address,
 
             LocalAgentValue::InfoRemoteRealLocationCode(code) =>
-                self.agent_info.user_isp_country_code = code.map(|v| v.0),
+                self.agent_info.user_isp_country_code = code,
 
             LocalAgentValue::InfoExitIpv4(address) =>
-                self.agent_info.server_exit_v4 = address.map(|v| v.first().cloned()).flatten(),
+                self.agent_info.server_exit_v4 = address.map(|v| IpAddress(v.into())),
             LocalAgentValue::InfoExitIpv6(address) =>
-                self.agent_info.server_exit_v6 = address.map(|v| v.first().cloned()).flatten(),
+                self.agent_info.server_exit_v6 = address.map(|v| IpAddress(v.into())),
 
             LocalAgentValue::Restrictions(restrictions) => {
                 self.restrictions = if let Some(restrictions)  = restrictions {
@@ -194,46 +196,44 @@ impl LocalAgentHandler {
             }
 
             LocalAgentValue::SettingsCircumventionRouting(value) =>
-                self.agent_info.settings.circumvention_routing = value.map(|v| v.0),
+                self.agent_info.settings.circumvention_routing = value,
 
             LocalAgentValue::SettingsLabel(value) =>
-                self.exit_label = value.map(|v| v.0),
+                self.exit_label = value,
 
             LocalAgentValue::SettingsNetshieldLevel(value) =>
                 self.agent_info.settings.netshield_level = value.map(Into::into),
 
             LocalAgentValue::SettingsPortForwarding(value) =>
-                self.agent_info.settings.port_forwarding = value.map(|v| v.0),
+                self.agent_info.settings.port_forwarding = value,
 
             LocalAgentValue::SettingsRandomNat(value) =>
-                self.agent_info.settings.random_nat = value.map(|v| v.0),
+                self.agent_info.settings.random_nat = value,
 
             LocalAgentValue::SettingsSoftjail(value) =>
-                self.agent_info.settings.soft_jail = value.map(|v| v.0),
+                self.agent_info.settings.soft_jail = value,
 
             LocalAgentValue::SettingsSplitTcp(value) =>
-                self.agent_info.settings.split_tcp = value.map(|v| v.0),
+                self.agent_info.settings.split_tcp = value,
 
             LocalAgentValue::StatsBytesReceived(val) => {
-                return self.local_agent_stats.bytes_received(val.map(|v| v.0));
+                return self.local_agent_stats.bytes_received(val);
             }
             LocalAgentValue::StatsBytesSent(val) => {
-                return self.local_agent_stats.bytes_sent(val.map(|v| v.0));
+                return self.local_agent_stats.bytes_sent(val);
             }
             LocalAgentValue::StatsNetshieldBlockCountMalicious(val) => {
-                return self.local_agent_stats.malicious_blocked(val.map(|v| v.0));
+                return self.local_agent_stats.malicious_blocked(val);
             }
             LocalAgentValue::StatsNetshieldBlockCountAds(val) => {
-                return self.local_agent_stats.ads_blocked(val.map(|v| v.0));
+                return self.local_agent_stats.ads_blocked(val);
             }
             LocalAgentValue::StatsNetshieldBlockCountTracking(val) => {
-                return self.local_agent_stats.trackers_blocked(val.map(|v| v.0));
+                return self.local_agent_stats.trackers_blocked(val);
             }
             LocalAgentValue::StatsNetshieldBlockCountAdult(val) => {
-                return self.local_agent_stats.adult_content_blocked(val.map(|v| v.0));
+                return self.local_agent_stats.adult_content_blocked(val);
             }
-
-            LocalAgentValue::Stats(_) => (), // will be removed
 
             LocalAgentValue::Jails(jails) =>
                 return self.handle_jails(jails),

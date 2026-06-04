@@ -15,6 +15,8 @@
 // You should have received a copy of the GNU General Public License
 // along with ProtonVPN.  If not, see <https://www.gnu.org/licenses/>.
 
+use crate::api::connection::IpAddress;
+
 /// Struct to enable/disable local agent features. When [None] is passed, the feature will use the
 /// default value.
 #[cfg_attr(feature = "uniffi", derive(uniffi::Record))]
@@ -47,8 +49,8 @@ pub enum NetshieldLevel {
 #[cfg_attr(feature = "uniffi", derive(uniffi::Record))]
 #[derive(Clone, Debug, PartialEq, Default)]
 pub struct AgentConnectionInfo {
-    pub server_exit_v4: Option<String>,
-    pub server_exit_v6: Option<String>,
+    pub server_exit_v4: Option<IpAddress>,
+    pub server_exit_v6: Option<IpAddress>,
     pub user_isp_ip: Option<String>,
     pub user_isp_country_code: Option<String>,
     pub user_isp_name: Option<String>,

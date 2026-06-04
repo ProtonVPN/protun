@@ -250,12 +250,12 @@ fn local_agent_get_stats() {
 
     let messages = HashMap::from([
         (connected_id.to_string(), LocalAgentMessage::LocalAgentConnected),
-        (stats_id_1.to_string(), LocalAgentMessage::Value(LocalAgentValue::StatsBytesReceived(Some(1234.into())))),
-        (stats_id_2.to_string(), LocalAgentMessage::Value(LocalAgentValue::StatsBytesSent(Some(5678.into())))),
-        (stats_id_3.to_string(), LocalAgentMessage::Value(LocalAgentValue::StatsNetshieldBlockCountMalicious(Some(1.into())))),
+        (stats_id_1.to_string(), LocalAgentMessage::Value(LocalAgentValue::StatsBytesReceived(Some(1234)))),
+        (stats_id_2.to_string(), LocalAgentMessage::Value(LocalAgentValue::StatsBytesSent(Some(5678)))),
+        (stats_id_3.to_string(), LocalAgentMessage::Value(LocalAgentValue::StatsNetshieldBlockCountMalicious(Some(1)))),
         (stats_id_4.to_string(), LocalAgentMessage::Value(LocalAgentValue::StatsNetshieldBlockCountAds(None))),
         (stats_id_5.to_string(), LocalAgentMessage::Value(LocalAgentValue::StatsNetshieldBlockCountTracking(None))),
-        (stats_id_6.to_string(), LocalAgentMessage::Value(LocalAgentValue::StatsNetshieldBlockCountAdult(Some(2.into())))),
+        (stats_id_6.to_string(), LocalAgentMessage::Value(LocalAgentValue::StatsNetshieldBlockCountAdult(Some(2)))),
     ]);
 
     // Establish WG connection.
