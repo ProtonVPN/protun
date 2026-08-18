@@ -18,7 +18,8 @@
 use std::time::Duration;
 use pvpnclient::os_interface::time::{FromDuration, Instant, InstantFactory, Monotonic, SystemTime, SystemTimeFactory};
 
-pub(crate) type RealtimeClock = Box<dyn Fn() -> Duration>;
+pub(crate) struct RealtimeClock(pub Box<dyn Fn() -> Duration>);
+pub(crate) struct MonotonicClock(pub Box<dyn Fn() -> Duration>);
 
 #[derive(Clone)]
 pub(crate) struct ClientRealtimeFactory;
@@ -39,8 +40,9 @@ impl ClientRealtimeFactory {
     }
 }
 
+#[derive(Clone)]
 pub(crate) struct ClientMonotonicFactory {
-    initial_instant: std::time::Instant
+    pub(crate) initial_instant: std::time::Instant
 }
 
 impl ClientMonotonicFactory {
@@ -48,6 +50,10 @@ impl ClientMonotonicFactory {
         Self {
             initial_instant: std::time::Instant::now()
         }
+    }
+
+    pub(crate) fn duration_since_initial(&self) -> std::time::Duration {
+        std::time::Instant::now().duration_since(self.initial_instant)
     }
 }
 

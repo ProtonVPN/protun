@@ -110,9 +110,9 @@ impl From<IpAddress> for String {
 }
 
 impl Event {
-    pub(crate) fn from_tunnel_stats(value: TunnelStats, timestamp_ms: i64) -> Self {
+    pub(crate) fn from_tunnel_stats(value: TunnelStats, mono_timestamp_ms: i64) -> Self {
         Event::ConnectionStats {
-            timestamp_ms,
+            mono_timestamp_ms,
             received_bytes: value.rx,
             sent_bytes: value.tx,
             time_since_last_handshake: value.time_since_last_handshake,

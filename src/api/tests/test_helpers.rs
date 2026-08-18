@@ -53,6 +53,7 @@ use super::test_clocks::{TestMonotonicClock, TestRealtimeClock};
 use crate::api::local_agent::LocalAgentSettings;
 #[cfg(feature = "local-agent")]
 use crate::api::tests::dummy_protocol::DummyLocalAgentScript;
+use crate::connection::time::{MonotonicClock, RealtimeClock};
 
 pub(crate) struct TestEventCallback {
     sender: mpsc::Sender<Event>,
@@ -259,7 +260,7 @@ pub(crate) fn prepare_connection_test(
 
             let client = Box::new(DummyPvpnClient::new(
                 config.connection_mode.to_pvpn_client_mode(&cache).unwrap(),
-                monotonic_clock_clone,
+                monotonic_clock_clone.clone(),
                 realtime_clock_clone.clone(),
                 #[cfg(feature = "local-agent")]
                 DummyLocalAgentScript::new_empty()
@@ -274,7 +275,8 @@ pub(crate) fn prepare_connection_test(
                 client,
                 state_change_callback,
                 event_callback,
-                realtime_clock: Box::new(move || realtime_clock_clone.now()),
+                realtime_clock: RealtimeClock(Box::new(move || realtime_clock_clone.now())),
+                monotonic_clock: MonotonicClock(Box::new(move || monotonic_clock_clone.now())),
                 cache,
             })
         },
@@ -422,7 +424,7 @@ pub(crate) fn prepare_local_agent_connection_test(
             let client = Box::new(
                 DummyPvpnClient::new(
                     config.connection_mode.to_pvpn_client_mode(&cache).unwrap(),
-                    monotonic_clock_clone,
+                    monotonic_clock_clone.clone(),
                     realtime_clock_clone.clone(),
                     script_clone
                 )
@@ -437,7 +439,8 @@ pub(crate) fn prepare_local_agent_connection_test(
                 client,
                 state_change_callback,
                 event_callback,
-                realtime_clock: Box::new(move || realtime_clock_clone.now()),
+                realtime_clock: RealtimeClock(Box::new(move || realtime_clock_clone.now())),
+                monotonic_clock: MonotonicClock(Box::new(move || monotonic_clock_clone.now())),
                 cache,
             })
         },

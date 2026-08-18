@@ -18,7 +18,7 @@
 use crate::api::connection::{ConfigUpdate, PersistentCache, TunStreamInfo};
 use crate::connection::mio::streams::{MioStream, TunStreamUnixType};
 use crate::connection::pvpn_connection::PvpnDependencies;
-use crate::connection::time::{ClientMonotonicFactory, ClientRealtimeFactory};
+use crate::connection::time::{ClientMonotonicFactory, ClientRealtimeFactory, MonotonicClock, RealtimeClock};
 use crate::{
     api::connection::{Connection, EventCallback, InitialConnectionConfig, StateChangedCallback},
     connection::{mio::{socket_factory_unix::SocketFactoryUnix, streams::MioStreams}, pvpn_client::PvpnClientImpl},
@@ -109,9 +109,10 @@ fn create_pvpn_dependencies(
     let streams = MioStreams::new(tun_stream, socket_factory, poll)
         .expect("Failed to create mio streams");
 
+    let monotonic_factory = ClientMonotonicFactory::new();
     let realtime_factory = ClientRealtimeFactory::new();
     let pvpn_client = PvpnClientImpl::new(
-        ClientMonotonicFactory::new(),
+        monotonic_factory.clone(),
         realtime_factory.clone(),
         config.connection_mode.to_pvpn_client_mode(&cache)?,
         || CryptoSeedProvider::new(rand::rng()).into()
@@ -124,7 +125,8 @@ fn create_pvpn_dependencies(
             client: Box::new(pvpn_client),
             state_change_callback,
             event_callback,
-            realtime_clock: Box::new(move || realtime_factory.now().duration_since_epoch()),
+            monotonic_clock: MonotonicClock(Box::new(move || monotonic_factory.duration_since_initial())),
+            realtime_clock: RealtimeClock(Box::new(move || realtime_factory.now().duration_since_epoch())),
             cache,
         }
     )

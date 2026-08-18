@@ -146,7 +146,7 @@ sealed interface PacketCaptureFile : Parcelable {
  */
 @Parcelize
 data class ConnectionStats(
-    val timestampMs: Long, //ms since epoch
+    val timestampMs: Long, //ms since start of the connection
     val receivedBytes: ULong,
     val sentBytes: ULong,
     val timeSinceLastHandshake: Duration,

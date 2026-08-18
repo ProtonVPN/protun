@@ -24,7 +24,7 @@ use crate::api::connection::{EventCallback, IpAddress, PersistentCache};
 use crate::api::windows::protun_error::ProTunFatalError;
 use crate::api::windows::state_changed_callback::WindowsStateChangedCallback;
 use crate::connection::pvpn_client::PvpnClientImpl;
-use crate::connection::time::{ClientMonotonicFactory, ClientRealtimeFactory};
+use crate::connection::time::{ClientMonotonicFactory, ClientRealtimeFactory, MonotonicClock, RealtimeClock};
 use crate::connection::windows::helpers::poll_waker::WindowsPollWaker;
 use crate::connection::windows::helpers::routes;
 use crate::connection::windows::streams::WindowsStreams;
@@ -209,10 +209,11 @@ fn create_pvpn_dependencies(
         .map_err(|e| Error::new(ErrorKind::Other, format!("Failed to create streams: {e}")))?);
     let streams: Box<dyn Streams> = Box::new(WindowsStreams::new(tun_stream, waker, udp_socket_config, send_pvpn_message));
 
+    let monotonic_factory = ClientMonotonicFactory::new();
     let realtime_factory = ClientRealtimeFactory::new();
     let client = Box::new(
         PvpnClientImpl::new(
-            ClientMonotonicFactory::new(),
+            monotonic_factory.clone(),
             realtime_factory.clone(),
             config.connection_mode.to_pvpn_client_mode(&cache)?,
             || CryptoSeedProvider::new(rand::rng()).into()
@@ -226,7 +227,8 @@ fn create_pvpn_dependencies(
             client,
             state_change_callback,
             event_callback,
-            realtime_clock: Box::new(move || realtime_factory.now().duration_since_epoch()),
+            monotonic_clock: MonotonicClock(Box::new(move || monotonic_factory.duration_since_initial())),
+            realtime_clock: RealtimeClock(Box::new(move || realtime_factory.now().duration_since_epoch())),
             cache,
         }
     )
