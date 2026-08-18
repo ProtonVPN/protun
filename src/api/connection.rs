@@ -134,6 +134,11 @@ impl Connection {
     pub fn request_stats(&self) {
         (self.send_pvpn_message)(PvpnMessage::RequestStats);
     }
+
+    #[cfg_attr(feature = "uniffi", uniffi::method)]
+    pub fn debug_log(&self) {
+        (self.send_pvpn_message)(PvpnMessage::DebugLog)
+    }
 }
 
 #[cfg_attr(feature = "uniffi", uniffi::export)]

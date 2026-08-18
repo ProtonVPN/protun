@@ -372,6 +372,11 @@ impl PvpnClient for DummyPvpnClient {
         self.close_current_connection();
     }
 
+    #[cfg(feature = "debug-counters")]
+    fn get_counters_log(&self) -> String {
+        "counters".to_string()
+    }
+
     fn get_stats(&mut self) -> Option<TunnelStats> {
         None
     }

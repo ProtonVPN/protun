@@ -137,6 +137,14 @@ internal class ProTunVpnService : VpnService() {
                         }
                         true
                     }
+                    VpnAction.DebugLog -> {
+                        if (manager.activeConnection != null) {
+                            manager.debugLog()
+                            true
+                        } else {
+                            false
+                        }
+                    }
                     VpnAction.Disconnect -> {
                         manager.clearConnection()
                         // stopSelf without stopForeground will not destroy the service.
@@ -227,6 +235,7 @@ internal class ProTunVpnService : VpnService() {
     sealed interface VpnAction : Parcelable {
         @Parcelize data class Connect(val config: InitialConfig) : VpnAction
         @Parcelize data object Disconnect : VpnAction
+        @Parcelize data object DebugLog : VpnAction
 
         sealed interface Update : VpnAction {
             @Parcelize data class Interface(val interfaceConfig: InterfaceConfig) : Update

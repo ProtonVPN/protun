@@ -176,6 +176,10 @@ internal class ConnectionManager(
         state.value = state.value.copy(alwaysOn = isAlwaysOn, isLockdownEnabled = isLockdownEnabled)
     }
 
+    fun debugLog() {
+        activeConnection?.connection?.debugLog()
+    }
+
     fun clearConnection(endState: VpnConnectionState = VpnConnectionState.Disconnected()) {
         activeConnection?.clear()
         activeConnection = null

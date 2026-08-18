@@ -87,6 +87,7 @@ pub(crate) enum PvpnMessage {
     RequestLocalAgentStats,
     #[cfg(feature = "local-agent")]
     InvalidateCertificate,
+    DebugLog,
 }
 
 pub(crate) type SendPvpnMessage = Arc<dyn Fn(PvpnMessage) + Send + Sync + 'static>;
@@ -317,6 +318,9 @@ impl PvpnConnection {
                 PvpnMessage::InvalidateCertificate => {
                     self.client.push_local_agent(LocalAgentAction::TriggerCertificateRefresh);
                 },
+                PvpnMessage::DebugLog => {
+                    self.log_debug_info();
+                }
             }
         }
         !self.should_stop
@@ -639,6 +643,18 @@ impl PvpnConnection {
     fn emit_event(&self, event: Event) {
         log::debug!("emitting event: {:?}", event);
         self.event_callback.on_event(event);
+    }
+
+    fn log_debug_info(&mut self) {
+        let stats = self.client.get_stats();
+        log::info!("Connection stats: {:?}", stats);
+
+        let info = self.client.get_tunnel_info();
+        let connection_state = self.get_peer_connection_state(&info);
+        log::info!("Connection state: {:?}", connection_state);
+
+        #[cfg(feature = "debug-counters")]
+        log::info!("pvpn counters:\n{}", self.client.get_counters_log());
     }
 
     fn get_peer_connection_state(&mut self, tunnel_info: &Option<TunnelInfo>) -> ConnectionState {

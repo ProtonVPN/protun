@@ -15,6 +15,7 @@
 // You should have received a copy of the GNU General Public License
 // along with ProtonVPN.  If not, see <https://www.gnu.org/licenses/>.
 
+use itertools::Itertools;
 use std::io;
 use std::io::ErrorKind;
 use pvpnclient::os_interface::time::{Instant, InstantFactory, SystemTime, SystemTimeFactory};
@@ -67,6 +68,8 @@ pub trait PvpnClient {
     fn pull(&mut self) -> Option<Action>;
     fn push(&mut self, action: Action);
     fn push_error(&mut self, stream_id: StreamId, error_kind: ErrorKind);
+    #[cfg(feature = "debug-counters")]
+    fn get_counters_log(&self) -> String;
     fn get_tunnel_info(&mut self) -> Option<TunnelInfo>;
     fn wakeup_deadline(&self) -> Deadline;
     fn notify_network_change(&mut self);
@@ -254,6 +257,13 @@ impl <'a> PvpnClient for PvpnClientImpl<'a> {
     fn notify_network_down(&mut self) {
         // no-op in real impl, libpvpnclient will find it out based on socket errors,
         // needed for testing
+    }
+
+    #[cfg(feature = "debug-counters")]
+    fn get_counters_log(&self) -> String {
+        let counters = self.c.counters();
+        let view = counters.get();
+        view.into_iter().map(|metric| metric.to_string()).join("")
     }
 
     fn get_tunnel_info(&mut self) -> Option<TunnelInfo> {

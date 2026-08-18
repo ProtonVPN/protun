@@ -85,6 +85,8 @@ interface ProtonVpnConnectionManager {
     fun invalidateCertificate()
 
     fun disconnect(error: VpnDisconnectError? = null)
+
+    fun debugLog()
 }
 
 @Parcelize

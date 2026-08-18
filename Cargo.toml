@@ -14,6 +14,7 @@ panic = "abort"
 
 [dependencies]
 base64 = { version = "0.22", default-features = false, features = ["alloc"], optional = true }
+itertools = "0.15.0"
 libc = { version = "0.2.180", optional = true }
 log = "0.4.29"
 mio = { version = "1.2.1", features = ["net", "os-poll", "os-ext"], optional = true }
@@ -78,6 +79,7 @@ uniffi = ["dep:uniffi"]
 mio = ["dep:mio"]
 local-agent = ["pvpnclient/local-agent", "dep:rustls-pki-types", "dep:muon"]
 real-connection-tests = ["test_utils"]
+debug-counters = ["pvpnclient/counters"]
 # Development-only feature to help establish proton session in sample code.
 test_utils = ["dep:tokio", "dep:async-compat", "dep:futures", "dep:muon", "muon/login", "dep:ini", "dep:base64"]
 

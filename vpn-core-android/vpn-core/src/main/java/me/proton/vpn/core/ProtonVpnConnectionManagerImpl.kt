@@ -245,6 +245,12 @@ internal class ProtonVpnConnectionManagerImpl(
         }
     }
 
+    override fun debugLog() {
+        mainScope.launch {
+            sendAction(ProTunVpnService.VpnAction.DebugLog)
+        }
+    }
+
     private fun setState(state: VpnState) {
         _state.value = state
     }
