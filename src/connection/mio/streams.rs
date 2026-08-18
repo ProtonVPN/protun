@@ -122,7 +122,7 @@ impl Streams for MioStreams {
         for event in self.events.iter() {
             let token = event.token();
             if token == POLL_WAKER_TOKEN {
-                log::info!("poll waker triggered");
+                log::debug!("poll waker triggered");
             } else {
                 let stream = get_stream_by_token(&mut self.streams, token);
                 if let Some(stream) = stream {
