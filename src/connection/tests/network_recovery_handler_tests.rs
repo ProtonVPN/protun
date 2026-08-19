@@ -36,6 +36,12 @@ fn new_handler() -> NetworkRecoveryHandler {
 
 fn network_error() -> Error { Error::new(ErrorKind::NetworkUnreachable, "test") }
 
+fn schedules_recovery_for(error_kind: ErrorKind) -> bool {
+    let mut handler = new_handler();
+    handler.on_stream_error(StreamId::from(1), &Error::new(error_kind, "test"), instant(0));
+    handler.wakeup_delay(|| instant(0)).is_some()
+}
+
 fn test_on_resumed(handler: &mut NetworkRecoveryHandler, now: Instant) -> bool {
     let mut notified = false;
     handler.on_resumed(now, || notified = true);
@@ -163,16 +169,13 @@ fn on_connectivity_change_resets_pending_and_backoff() {
 
 #[test]
 fn on_stream_error_only_schedules_for_network_errors() {
-    let mut handler = new_handler();
-    let now = instant(0);
+    assert!(schedules_recovery_for(ErrorKind::NetworkUnreachable));
+    assert!(schedules_recovery_for(ErrorKind::NetworkDown));
+    assert!(schedules_recovery_for(ErrorKind::HostUnreachable));
 
-    // Non-network errors should not schedule
-    handler.on_stream_error(StreamId::from(1), &Error::new(ErrorKind::TimedOut, "test"), now);
-    assert!(handler.wakeup_delay(|| instant(0)).is_none());
-
-    // NetworkUnreachable should schedule
-    handler.on_stream_error(StreamId::from(1), &network_error(), now);
-    assert!(handler.wakeup_delay(|| instant(0)).is_some());
+    assert!(!schedules_recovery_for(ErrorKind::TimedOut));
+    assert!(!schedules_recovery_for(ErrorKind::ConnectionRefused));
+    assert!(!schedules_recovery_for(ErrorKind::ConnectionReset));
 }
 
 #[test]

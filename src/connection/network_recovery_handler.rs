@@ -117,7 +117,7 @@ impl NetworkRecoveryHandler {
     pub(crate) fn on_stream_error(&mut self, stream_id: StreamId, err: &std::io::Error, now: Instant) {
         if self.network_available {
             match err.kind() {
-                ErrorKind::NetworkUnreachable | ErrorKind::NetworkDown => {
+                ErrorKind::HostUnreachable | ErrorKind::NetworkUnreachable | ErrorKind::NetworkDown => {
                     self.send_delayed_network_change_at = Some(now + self.delayed_network_change_duration);
                     log::error!("network down on stream {:?}: {:?}. Will retry in {:?}",
                         stream_id, err, self.delayed_network_change_duration);
