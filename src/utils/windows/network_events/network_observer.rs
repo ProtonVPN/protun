@@ -104,7 +104,7 @@ fn handle_ipv4_internet_connectivity(new_ipv4_interface: Ipv4InternetInterface,
     current_interface: Option<NetworkInterface>, trigger_func: &OnNetworkObserverTriggerType) {
     match current_interface {
         Some(current_interface) => {
-            if current_interface.index == new_ipv4_interface.interface_index &&
+            if current_interface.luid == new_ipv4_interface.interface_luid &&
                 let V4(current_interface_ipv4_addr) = current_interface.ip_addr && current_interface_ipv4_addr == new_ipv4_interface.local_ip
             {
                 log::debug!("Best IPv4 internet interface already selected ({current_interface})");
@@ -129,7 +129,7 @@ fn handle_ipv6_internet_connectivity(new_ipv6_interface: Ipv6InternetInterface,
     current_interface: Option<NetworkInterface>, trigger_func: &OnNetworkObserverTriggerType) {
     match current_interface {
         Some(current_interface) => {
-            if current_interface.index == new_ipv6_interface.interface_index &&
+            if current_interface.luid == new_ipv6_interface.interface_luid &&
                 let V6(current_interface_ipv6_addr) = current_interface.ip_addr && current_interface_ipv6_addr == new_ipv6_interface.local_ip
             {
                 log::debug!("Best IPv6 internet interface already selected ({current_interface})");
@@ -149,12 +149,12 @@ fn handle_ipv4_and_ipv6_internet_connectivity(new_ipv4_interface: Ipv4InternetIn
     current_interface: Option<NetworkInterface>, trigger_func: &OnNetworkObserverTriggerType) {
     match current_interface {
         Some(current_interface) => {
-            if current_interface.index == new_ipv4_interface.interface_index &&
+            if current_interface.luid == new_ipv4_interface.interface_luid &&
                 let V4(current_interface_ipv4_addr) = current_interface.ip_addr && current_interface_ipv4_addr == new_ipv4_interface.local_ip
             {
                 log::debug!("Best IPv4 internet interface already selected. IPv6 is available. ({current_interface})");
             }
-            else if current_interface.index == new_ipv6_interface.interface_index &&
+            else if current_interface.luid == new_ipv6_interface.interface_luid &&
                 let V6(current_interface_ipv6_addr) = current_interface.ip_addr && current_interface_ipv6_addr == new_ipv6_interface.local_ip
             {
                 log::debug!("Best IPv6 internet interface already selected. IPv4 is available. ({current_interface})");

@@ -30,10 +30,12 @@ use crate::connection::windows::helpers::routes::TunRoutes;
 use crate::connection::windows::helpers::wintun::constants::{ADAPTER_DESCRIPTION, ADAPTER_GUID, ADAPTER_GUID_U128, ADAPTER_NAME, WINTUN_FILE_NAME};
 use crate::utils::common::OptionIpv6AddrAsString;
 use crate::utils::vector::VecIpAddress;
+use crate::utils::windows::luid::Luid;
 
 pub struct WinTunSession {
     _adapter: Arc<Adapter>,
     pub(crate) session: Arc<Session>,
+    pub interface_luid: Luid,
     pub interface_index: u32,
     pub client_ipv4_addr: Ipv4Addr,
     pub server_ipv4_addr: Ipv4Addr,
@@ -50,21 +52,26 @@ impl WinTunSession {
         let adapter: Arc<Adapter> = Self::create_wintun_adapter()?;
         let interface_index: u32 = adapter.get_adapter_index()
             .map_err(|e| ProTunFatalError::WintunAdapterIndexFetchFailed(format!("Failed to get the Wintun adapter index. Error: {e}")))?;
+        let interface_luid: Luid = adapter.get_luid().into();
         
-        log::info!("WinTUN uses interface with index {interface_index}");
+        log::info!("WinTUN uses interface with index {interface_index} and LUID {interface_luid}");
 
-        _ = set_ipv4_adapter_configurations(interface_index, adapter_config.mtu);
+        set_ipv4_adapter_configurations(interface_luid, adapter_config.mtu)
+            .map_err(|e| ProTunFatalError::WintunInterfaceCreationFailed(format!("Failed to set IPv4 adapter configurations. Error code: {}", e.0)))?;
         if adapter_config.is_ipv6_enabled {
-            _ = enable_adapter_ipv6();
-            _ = set_ipv6_adapter_configurations(interface_index, adapter_config.mtu);
+            log_error_and_continue(enable_adapter_ipv6()
+                .map_err(|e| ProTunFatalError::WintunInterfaceCreationFailed(format!("Failed to enable IPv6 in the adapter. Error: {e}"))));
+            set_ipv6_adapter_configurations(interface_luid, adapter_config.mtu)
+                .map_err(|e| ProTunFatalError::WintunInterfaceCreationFailed(format!("Failed to set IPv6 adapter configurations. Error code: {}", e.0)))?;
         } else {
-            _ = disable_adapter_ipv6();
+            log_error_and_continue(disable_adapter_ipv6()
+                .map_err(|e| ProTunFatalError::WintunInterfaceCreationFailed(format!("Failed to disable IPv6 in the adapter. Error: {e}"))));
         };
         
-        let (client_ipv4_addr, client_ipv6_addr) = set_adapter_ip_addresses(interface_index)?;
+        let (client_ipv4_addr, client_ipv6_addr) = set_adapter_ip_addresses(interface_luid, &adapter_config)?;
         let (server_ipv4_addr, server_ipv6_addr) = calculate_and_set_dns_servers(adapter_config.custom_dns_server_ips, client_ipv4_addr, client_ipv6_addr);
 
-        let routes: TunRoutes = TunRoutes::create(server_ipv4_addr, server_ipv6_addr, interface_index);
+        let routes: TunRoutes = TunRoutes::create(server_ipv4_addr, server_ipv6_addr, interface_luid);
 
         let session: Arc<Session> = Arc::new(adapter.start_session(buffer_size_bytes)
             .map_err(|e| ProTunFatalError::WintunSessionCreationFailed(format!("Failed to create the Wintun session. Error: {e}")))?);
@@ -73,6 +80,7 @@ impl WinTunSession {
         Ok(WinTunSession {
             _adapter: adapter,
             session: session,
+            interface_luid: interface_luid,
             interface_index: interface_index,
             client_ipv4_addr: client_ipv4_addr,
             server_ipv4_addr: server_ipv4_addr,
@@ -132,21 +140,31 @@ impl WinTunSession {
     }
 }
 
-fn set_adapter_ip_addresses(interface_index: u32) -> Result<(Ipv4Addr, Option<Ipv6Addr>), ProTunFatalError> {
+fn log_error_and_continue(format: Result<(), ProTunFatalError>) {
+    if let Err(error) = format {
+        log::error!("{error}");
+    }
+}
+
+fn set_adapter_ip_addresses(interface_luid: Luid, adapter_config: &AdapterConfig) -> Result<(Ipv4Addr, Option<Ipv6Addr>), ProTunFatalError> {
     log::info!("Setting adapter IP addresses");
 
     // Attempts to set the Wintun network interface with IP 10.2.0.2, if it fails, will try 10.3.0.2, and so on...
     for i in 2..=255 {
         let client_ipv4_addr: Ipv4Addr = Ipv4Addr::new(10, i, 0, 2);
-        match set_adapter_ipv4_address(interface_index, client_ipv4_addr, 32) {
+        match set_adapter_ipv4_address(interface_luid, client_ipv4_addr, 32) {
             Ok(_) => (),
             Err(_) => continue,
         }
 
-        let client_ipv6_addr: Ipv6Addr = Ipv6Addr::new(0x2a07, 0xb944, 0, 0, 0, 0, i.into(), 0x2);
-        let client_ipv6_addr_result: Option<Ipv6Addr> = match set_adapter_ipv6_address(interface_index, client_ipv6_addr, 128) {
-            Ok(_) => Some(client_ipv6_addr),
-            Err(_) => None,
+        let client_ipv6_addr_result: Option<Ipv6Addr> = if adapter_config.is_ipv6_enabled {
+            let client_ipv6_addr: Ipv6Addr = Ipv6Addr::new(0x2a07, 0xb944, 0, 0, 0, 0, i.into(), 0x2);
+            match set_adapter_ipv6_address(interface_luid, client_ipv6_addr, 128) {
+                Ok(_) => Some(client_ipv6_addr),
+                Err(_) => None,
+            }
+        } else {
+            None
         };
 
         log::info!("Adapter IP addresses set successfully (IPv4 '{client_ipv4_addr}') (IPv6 '{}')", client_ipv6_addr_result.to_string_or(""));

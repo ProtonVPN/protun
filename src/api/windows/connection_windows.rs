@@ -48,6 +48,7 @@ pub struct ProTun {
 #[cfg_attr(feature = "uniffi", derive(uniffi::Record))]
 #[derive(Clone)]
 pub struct ProTunAdapterDetails {
+    pub interface_luid: u64,
     pub interface_index: u32,
     pub client_ipv4_addr: String,
     pub server_ipv4_addr: String,
@@ -154,6 +155,7 @@ impl WindowsConnection {
     #[cfg_attr(feature = "uniffi", uniffi::method)]
     pub fn get_adapter_details(&self) -> ProTunAdapterDetails {
         ProTunAdapterDetails {
+            interface_luid: self.tun.interface_luid.0,
             interface_index: self.tun.interface_index,
             client_ipv4_addr: self.tun.client_ipv4_addr.to_string(),
             server_ipv4_addr: self.tun.server_ipv4_addr.to_string(),

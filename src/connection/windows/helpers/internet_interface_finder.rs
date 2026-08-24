@@ -25,6 +25,7 @@ use windows::Win32::NetworkManagement::IpHelper::{ConvertInterfaceLuidToGuid, Fr
 use windows::Win32::Networking::WinSock::{ADDRESS_FAMILY, AF_INET, AF_INET6, AF_UNSPEC, IpDadStatePreferred, SOCKADDR_INET};
 
 use crate::connection::windows::helpers::wintun::constants::ADAPTER_GUID;
+use crate::utils::windows::luid::Luid;
 
 #[derive(Eq, Hash, PartialEq)]
 struct InterfaceLuid(u64);
@@ -49,6 +50,7 @@ pub(crate) struct Ipv4InternetInterface {
     interface_metric: u32,
     default_route_metric: u32,
     pub(crate) local_ip: Ipv4Addr,
+    pub(crate) interface_luid: Luid,
     pub(crate) interface_index: u32,
     pub(crate) next_hop: Ipv4Addr,
     is_virtual: bool
@@ -62,8 +64,9 @@ impl Ipv4InternetInterface {
 
 impl Display for Ipv4InternetInterface {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        write!(f, "IPv4 address {} -> Next hop {} (Interface {}) (Effective Metric {} = Interface Metric {} + Default Route Metric {}) Virtual: {}",
-            self.local_ip, self.next_hop, self.interface_index, self.effective_metric(), self.interface_metric, self.default_route_metric, self.is_virtual)
+        write!(f, "IPv4 address {} -> Next hop {} (Interface - LUID: {}, Index: {}) (Effective Metric {} = Interface Metric {} + Default Route Metric {}) Virtual: {}",
+            self.local_ip, self.next_hop, self.interface_luid, self.interface_index,
+            self.effective_metric(), self.interface_metric, self.default_route_metric, self.is_virtual)
     }
 }
 
@@ -72,6 +75,7 @@ pub(crate) struct Ipv6InternetInterface {
     interface_metric: u32,
     default_route_metric: u32,
     pub(crate) local_ip: Ipv6Addr,
+    pub(crate) interface_luid: Luid,
     pub(crate) interface_index: u32,
     pub(crate) next_hop: Ipv6Addr,
     is_virtual: bool
@@ -85,8 +89,9 @@ impl Ipv6InternetInterface {
 
 impl Display for Ipv6InternetInterface {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        write!(f, "IPv6 address {} -> Next hop {} (Interface {}) (Effective Metric {} = Interface Metric {} + Default Route Metric {}) Virtual: {}",
-            self.local_ip, self.next_hop, self.interface_index, self.effective_metric(), self.interface_metric, self.default_route_metric, self.is_virtual)
+        write!(f, "IPv6 address {} -> Next hop {} (Interface - LUID: {}, Index: {}) (Effective Metric {} = Interface Metric {} + Default Route Metric {}) Virtual: {}",
+            self.local_ip, self.next_hop, self.interface_luid, self.interface_index,
+            self.effective_metric(), self.interface_metric, self.default_route_metric, self.is_virtual)
     }
 }
 
@@ -182,16 +187,27 @@ fn print_addresses(log_mode: &InterfaceFinderLogMode, valid_internet_interfaces:
                 let mut log_message: String = format!("Available internet interfaces as requested by '{caller_name}':");
 
                 for ipvalid_internet_interface in valid_internet_interfaces {
-                    let (ipaddr, interface_index, is_virtual, interface_metric, default_route_metric, effective_metric) = match ipvalid_internet_interface {
+                    let (ipaddr, interface_luid, interface_index, is_virtual, interface_metric, 
+                        default_route_metric, effective_metric) = match ipvalid_internet_interface {
                         InternetInterface::V4(ipv4_internet_interface) => (
-                            IpAddr::V4(ipv4_internet_interface.local_ip), ipv4_internet_interface.interface_index, ipv4_internet_interface.is_virtual,
-                            ipv4_internet_interface.interface_metric, ipv4_internet_interface.default_route_metric, ipv4_internet_interface.effective_metric()),
+                            IpAddr::V4(ipv4_internet_interface.local_ip),
+                            ipv4_internet_interface.interface_luid,
+                            ipv4_internet_interface.interface_index,
+                            ipv4_internet_interface.is_virtual,
+                            ipv4_internet_interface.interface_metric,
+                            ipv4_internet_interface.default_route_metric,
+                            ipv4_internet_interface.effective_metric()),
                         InternetInterface::V6(ipv6_internet_interface) => (
-                            IpAddr::V6(ipv6_internet_interface.local_ip), ipv6_internet_interface.interface_index, ipv6_internet_interface.is_virtual,
-                            ipv6_internet_interface.interface_metric, ipv6_internet_interface.default_route_metric, ipv6_internet_interface.effective_metric()),
+                            IpAddr::V6(ipv6_internet_interface.local_ip),
+                            ipv6_internet_interface.interface_luid,
+                            ipv6_internet_interface.interface_index,
+                            ipv6_internet_interface.is_virtual,
+                            ipv6_internet_interface.interface_metric,
+                            ipv6_internet_interface.default_route_metric,
+                            ipv6_internet_interface.effective_metric()),
                     };
 
-                    _ = write!(log_message, "\n- Interface Index: {interface_index}, IP: {ipaddr}, Is virtual: {is_virtual}, \
+                    _ = write!(log_message, "\n- Interface (LUID: {interface_luid}, Index: {interface_index}), IP: {ipaddr}, Is virtual: {is_virtual}, \
                         Effective Metric {effective_metric} (Interface Metric {interface_metric} + Default Route Metric {default_route_metric})");
                 }
 
@@ -272,6 +288,7 @@ fn create_internet_interface(route: &MIB_IPFORWARD_ROW2, ip_address: &IpAddr, in
                             interface_metric,
                             default_route_metric: route.Metric,
                             local_ip: *ipv4addr,
+                            interface_luid: route.InterfaceLuid.into(),
                             interface_index: route.InterfaceIndex,
                             next_hop: ipv4_next_hop,
                             is_virtual: interface_metadata.is_virtual
@@ -291,6 +308,7 @@ fn create_internet_interface(route: &MIB_IPFORWARD_ROW2, ip_address: &IpAddr, in
                             interface_metric,
                             default_route_metric: route.Metric,
                             local_ip: *ipv6addr,
+                            interface_luid: route.InterfaceLuid.into(),
                             interface_index: route.InterfaceIndex,
                             next_hop: ipv6_next_hop,
                             is_virtual: interface_metadata.is_virtual

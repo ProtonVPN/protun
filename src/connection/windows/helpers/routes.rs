@@ -21,6 +21,7 @@ use std::net::{IpAddr, Ipv4Addr, Ipv6Addr};
 use std::sync::{Arc, Mutex, Weak};
 use crate::connection::windows::helpers::internet_interface_finder::{Ipv4InternetInterface, Ipv6InternetInterface};
 use crate::connection::windows::helpers::windows_api::routing_table::{self, Ipv4Route, Ipv6Route, Route, add_route, add_v4_route, add_v6_route, delete_route};
+use crate::utils::windows::luid::Luid;
 use crate::utils::windows::registry_editor::{get_stored_routes, set_stored_routes};
 
 // The VpnServerRouteManager and VpnServerRouteGuard exist because it should be possible to create multiple sockets to
@@ -127,7 +128,7 @@ impl Drop for VpnServerRouteGuard {
 }
 
 pub(crate) struct TunRoutes {
-    interface_index: u32
+    interface_luid: Luid
 }
 
 pub(crate) struct VpnServerRoute {
@@ -149,33 +150,33 @@ impl TunRoutes {
     /// Creates the following routes, all forwarded to the TUN interface:
     /// - Any routes: Mandatory to route all traffic to the ProTUN interface \[0.0.0.0/0 => ProTUN\]
     /// - Local agent routes: Necessary to route Local Agent traffic correctly in case the device has a 10.0.0.0/8 or 10.X.0.0/16 network that could interfere \[10.2.0.1/32 => ProTUN\]
-    pub(crate) fn create(server_tunnel_ipv4_addr: Ipv4Addr, server_tunnel_ipv6_addr: Option<Ipv6Addr>, tun_interface_index: u32) -> TunRoutes {
+    pub(crate) fn create(server_tunnel_ipv4_addr: Ipv4Addr, server_tunnel_ipv6_addr: Option<Ipv6Addr>, tun_interface_luid: Luid) -> TunRoutes {
         log::info!("Creating TUN routes");
 
-        _ = add_v4_route(&create_ipv4_local_agent_route(server_tunnel_ipv4_addr, tun_interface_index));
-        _ = add_v4_route(&create_ipv4_default_route(tun_interface_index));
+        _ = add_v4_route(&create_ipv4_local_agent_route(server_tunnel_ipv4_addr, tun_interface_luid));
+        _ = add_v4_route(&create_ipv4_default_route(tun_interface_luid));
 
-        for route in &create_ipv4_split_default_routes(tun_interface_index) {
+        for route in &create_ipv4_split_default_routes(tun_interface_luid) {
             _ = add_v4_route(route);
         }
 
         if let Some(server_ipv6_addr) = server_tunnel_ipv6_addr {
-            _ = add_v6_route(&create_ipv6_local_agent_route(server_ipv6_addr, tun_interface_index));
-            _ = add_v6_route(&create_ipv6_default_route(tun_interface_index));
+            _ = add_v6_route(&create_ipv6_local_agent_route(server_ipv6_addr, tun_interface_luid));
+            _ = add_v6_route(&create_ipv6_default_route(tun_interface_luid));
             
-            for route in &create_ipv6_split_default_routes(tun_interface_index) {
+            for route in &create_ipv6_split_default_routes(tun_interface_luid) {
                 _ = add_v6_route(route);
             }
         }
 
         log::info!("TUN routes created");
 
-        TunRoutes { interface_index: tun_interface_index }
+        TunRoutes { interface_luid: tun_interface_luid }
     }
     
     pub(crate) fn delete(&self) {
-        log::info!("Deleting routes of interface {}", self.interface_index);
-        routing_table::delete_interface_routes(self.interface_index);
+        log::info!("Deleting routes of interface {}", self.interface_luid);
+        routing_table::delete_interface_routes(self.interface_luid);
     }
 }
 
@@ -261,88 +262,88 @@ fn delete_stored_routes() {
     set_stored_routes(routes_to_reinsert);
 }
 
-fn create_ipv4_local_agent_route(server_ip: Ipv4Addr, interface_index: u32) -> Ipv4Route {
-    create_ipv4_host_route(server_ip, None, interface_index)
+fn create_ipv4_local_agent_route(server_ip: Ipv4Addr, interface_luid: Luid) -> Ipv4Route {
+    create_ipv4_host_route(server_ip, None, interface_luid)
 }
 
-fn create_ipv4_host_route(server_ip: Ipv4Addr, next_hop: Option<Ipv4Addr>, interface_index: u32) -> Ipv4Route {
+fn create_ipv4_host_route(server_ip: Ipv4Addr, next_hop: Option<Ipv4Addr>, interface_luid: Luid) -> Ipv4Route {
     Ipv4Route {
         destination_ip_addr: server_ip,
         destination_prefix_length: 32,
         next_hop_address: next_hop,
-        interface_index: interface_index
+        interface_luid: interface_luid
     }
 }
 
-fn create_ipv4_default_route(interface_index: u32) -> Ipv4Route {
+fn create_ipv4_default_route(interface_luid: Luid) -> Ipv4Route {
     Ipv4Route {
         destination_ip_addr: Ipv4Addr::new(0,0,0,0),
         destination_prefix_length: 0,
         next_hop_address: None,
-        interface_index: interface_index
+        interface_luid: interface_luid
     }
 }
 
-fn create_ipv4_split_default_routes(interface_index: u32) -> Vec<Ipv4Route> {
+fn create_ipv4_split_default_routes(interface_luid: Luid) -> Vec<Ipv4Route> {
     vec![
         Ipv4Route {
             destination_ip_addr: Ipv4Addr::new(0,0,0,0),
             destination_prefix_length: 1,
             next_hop_address: None,
-            interface_index: interface_index
+            interface_luid: interface_luid
         },
         Ipv4Route {
             destination_ip_addr: Ipv4Addr::new(128,0,0,0),
             destination_prefix_length: 1,
             next_hop_address: None,
-            interface_index: interface_index
+            interface_luid: interface_luid
         }
     ]
 }
 
-fn create_ipv6_local_agent_route(server_ip: Ipv6Addr, interface_index: u32) -> Ipv6Route {
-    create_ipv6_host_route(server_ip, None, interface_index)
+fn create_ipv6_local_agent_route(server_ip: Ipv6Addr, interface_luid: Luid) -> Ipv6Route {
+    create_ipv6_host_route(server_ip, None, interface_luid)
 }
 
-fn create_ipv6_host_route(server_ip: Ipv6Addr, next_hop: Option<Ipv6Addr>, interface_index: u32) -> Ipv6Route {
+fn create_ipv6_host_route(server_ip: Ipv6Addr, next_hop: Option<Ipv6Addr>, interface_luid: Luid) -> Ipv6Route {
     Ipv6Route {
         destination_ip_addr: server_ip,
         destination_prefix_length: 128,
         next_hop_address: next_hop,
-        interface_index: interface_index
+        interface_luid: interface_luid
     }
 }
 
-fn create_ipv6_default_route(interface_index: u32) -> Ipv6Route {
+fn create_ipv6_default_route(interface_luid: Luid) -> Ipv6Route {
     return Ipv6Route {
         destination_ip_addr: Ipv6Addr::new(0, 0, 0, 0, 0, 0, 0, 0),
         destination_prefix_length: 0,
         next_hop_address: None,
-        interface_index: interface_index
+        interface_luid: interface_luid
     };
 }
 
-fn create_ipv6_split_default_routes(interface_index: u32) -> Vec<Ipv6Route> {
+fn create_ipv6_split_default_routes(interface_luid: Luid) -> Vec<Ipv6Route> {
     vec![
         Ipv6Route {
             destination_ip_addr: Ipv6Addr::new(0, 0, 0, 0, 0, 0, 0, 0),
             destination_prefix_length: 1,
             next_hop_address: None,
-            interface_index: interface_index
+            interface_luid: interface_luid
         },
         Ipv6Route {
             destination_ip_addr: Ipv6Addr::new(0x8000u16, 0, 0, 0, 0, 0, 0, 0),
             destination_prefix_length: 1,
             next_hop_address: None,
-            interface_index: interface_index
+            interface_luid: interface_luid
         }
     ]
 }
 
 fn create_ipv4_server_route(server_ip: Ipv4Addr, internet_interface: &Ipv4InternetInterface) -> Route {
-    Route::V4(create_ipv4_host_route(server_ip, Some(internet_interface.next_hop), internet_interface.interface_index))
+    Route::V4(create_ipv4_host_route(server_ip, Some(internet_interface.next_hop), internet_interface.interface_luid))
 }
 
 fn create_ipv6_server_route(server_ip: Ipv6Addr, internet_interface: &Ipv6InternetInterface) -> Route {
-    Route::V6(create_ipv6_host_route(server_ip, Some(internet_interface.next_hop), internet_interface.interface_index))
+    Route::V6(create_ipv6_host_route(server_ip, Some(internet_interface.next_hop), internet_interface.interface_luid))
 }

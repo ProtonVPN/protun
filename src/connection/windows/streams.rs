@@ -127,6 +127,7 @@ impl WindowsStreams {
             Some(stream) => {
                 let interface: &SocketInterface = stream.stream.get_interface();
                 Some(NetworkInterface {
+                    luid: interface.interface_luid,
                     index: interface.interface_index,
                     ip_addr: interface.address.ip(),
                 })

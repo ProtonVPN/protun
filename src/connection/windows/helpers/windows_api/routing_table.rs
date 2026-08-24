@@ -22,6 +22,8 @@ use windows::Win32::Foundation::{ERROR_NOT_FOUND, ERROR_OBJECT_ALREADY_EXISTS, E
 use windows::Win32::NetworkManagement::IpHelper::{CreateIpForwardEntry2, DeleteIpForwardEntry2, FreeMibTable, GetIpForwardTable2, InitializeIpForwardEntry, MIB_IPFORWARD_ROW2, MIB_IPFORWARD_TABLE2};
 use windows::Win32::Networking::WinSock::{ADDRESS_FAMILY, AF_INET, AF_INET6, AF_UNSPEC, IN_ADDR, IN_ADDR_0, IN6_ADDR, IN6_ADDR_0, SOCKADDR_INET};
 
+use crate::utils::windows::luid::Luid;
+
 #[derive(Serialize, Deserialize, Clone, PartialEq, Eq)]
 pub(crate) enum Route {
     V4(Ipv4Route),
@@ -42,7 +44,7 @@ pub(crate) struct Ipv4Route {
     pub(crate) destination_ip_addr: Ipv4Addr,
     pub(crate) destination_prefix_length: u8,
     pub(crate) next_hop_address: Option<Ipv4Addr>,
-    pub(crate) interface_index: u32,
+    pub(crate) interface_luid: Luid,
 }
 
 impl fmt::Display for Ipv4Route {
@@ -51,7 +53,7 @@ impl fmt::Display for Ipv4Route {
             Some(next_hop_address) => next_hop_address.to_string(),
             None => "On-link".to_string(),
         };
-        write!(f, "{}/{} -> {} interface {}", self.destination_ip_addr, self.destination_prefix_length, next_hop_address, self.interface_index)
+        write!(f, "{}/{} -> {} Interface LUID {}", self.destination_ip_addr, self.destination_prefix_length, next_hop_address, self.interface_luid)
     }
 }
 
@@ -60,7 +62,7 @@ pub(crate) struct Ipv6Route {
     pub(crate) destination_ip_addr: Ipv6Addr,
     pub(crate) destination_prefix_length: u8,
     pub(crate) next_hop_address: Option<Ipv6Addr>,
-    pub(crate) interface_index: u32,
+    pub(crate) interface_luid: Luid,
 }
 
 impl fmt::Display for Ipv6Route {
@@ -69,7 +71,7 @@ impl fmt::Display for Ipv6Route {
             Some(next_hop_address) => next_hop_address.to_string(),
             None => "On-link".to_string(),
         };
-        write!(f, "{}/{} -> {} interface {}", self.destination_ip_addr, self.destination_prefix_length, next_hop_address, self.interface_index)
+        write!(f, "{}/{} -> {} Interface LUID {}", self.destination_ip_addr, self.destination_prefix_length, next_hop_address, self.interface_luid)
     }
 }
 
@@ -132,7 +134,7 @@ fn create_ipv4_mib_ipforward_row(route: &Ipv4Route) -> MIB_IPFORWARD_ROW2 {
         };
     }
 
-    row.InterfaceIndex = route.interface_index;
+    row.InterfaceLuid = route.interface_luid.to_net_luid_lh();
     row.Metric = 1;
 
     row
@@ -183,7 +185,7 @@ fn create_ipv6_mib_ipforward_row(route: &Ipv6Route) -> MIB_IPFORWARD_ROW2 {
         };
     }
 
-    row.InterfaceIndex = route.interface_index;
+    row.InterfaceLuid = route.interface_luid.to_net_luid_lh();
     row.Metric = 1;
 
     row
@@ -236,23 +238,23 @@ pub fn delete_v6_route(route: &Ipv6Route) -> Result<RouteDeletionSuccess, String
     }
 }
 
-pub fn delete_interface_routes(interface_index: u32) -> Vec<Result<RouteDeletionSuccess, String>> {
-    let interface_rows: Vec<MIB_IPFORWARD_ROW2> = get_interface_rows(interface_index);
+pub fn delete_interface_routes(interface_luid: Luid) -> Vec<Result<RouteDeletionSuccess, String>> {
+    let interface_rows: Vec<MIB_IPFORWARD_ROW2> = get_interface_rows(interface_luid);
     let mut results: Vec<Result<RouteDeletionSuccess, String>> = vec![];
     
     for row in interface_rows {
         let result: WIN32_ERROR = unsafe { DeleteIpForwardEntry2(&row) };
         results.push(match result {
             WIN32_ERROR(0) => {
-                log::info!("Route of interface {interface_index} deleted successfully: {}", row_to_string(&row));
+                log::info!("Route of interface with LUID {interface_luid} deleted successfully: {}", row_to_string(&row));
                 Ok(RouteDeletionSuccess::Deleted)
             },
             ERROR_OBJECT_NOT_FOUND | ERROR_NOT_FOUND => {
-                log::info!("Route of interface {interface_index} already doesn't exist: {}", row_to_string(&row));
+                log::info!("Route of interface with LUID {interface_luid} already doesn't exist: {}", row_to_string(&row));
                 Ok(RouteDeletionSuccess::NotFound)
             },
             _ => {
-                log::error!("Error '{}' when deleting route of interface {interface_index}: {}", result.0, row_to_string(&row));
+                log::error!("Error '{}' when deleting route of interface with LUID {interface_luid}: {}", result.0, row_to_string(&row));
                 Err(result.0.to_string())
             },
         });
@@ -260,7 +262,7 @@ pub fn delete_interface_routes(interface_index: u32) -> Vec<Result<RouteDeletion
     results
 }
 
-fn get_interface_rows(interface_index: u32) -> Vec<MIB_IPFORWARD_ROW2> {
+fn get_interface_rows(interface_luid: Luid) -> Vec<MIB_IPFORWARD_ROW2> {
     let mut table_ptr: *mut MIB_IPFORWARD_TABLE2 = std::ptr::null_mut();
 
     let error: WIN32_ERROR = unsafe { GetIpForwardTable2(AF_UNSPEC, &mut table_ptr) };
@@ -277,7 +279,7 @@ fn get_interface_rows(interface_index: u32) -> Vec<MIB_IPFORWARD_ROW2> {
     let filtered: Vec<MIB_IPFORWARD_ROW2> = rows
         .iter()
         .cloned()
-        .filter(|r| r.InterfaceIndex == interface_index)
+        .filter(|r| unsafe { r.InterfaceLuid.Value } == interface_luid.0)
         .collect();
 
     unsafe { FreeMibTable(table_ptr as _) };

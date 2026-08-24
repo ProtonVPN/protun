@@ -33,7 +33,7 @@ pub(crate) struct TunStreamWindows {
 }
 impl TunStreamWindows {
     pub fn new(tun: Arc<WinTunSession>) -> Result<TunStreamWindows, ProTunFatalError> {
-        log::info!("New Tun interface with ID: {}", tun.interface_index);
+        log::info!("New Wintun interface with LUID {} and Index {}", tun.interface_luid, tun.interface_index);
 
         let interface: SocketInterface = SocketInterface::new_tun(&tun);
 

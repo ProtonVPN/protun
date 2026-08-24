@@ -105,7 +105,8 @@ unsafe extern "system" fn on_route_change(
 
     let event_type: EventType = event_type.unwrap();
     let row: &MIB_IPFORWARD_ROW2 = unsafe { &*row };
-    let message: NetworkObserverEvent = NetworkObserverEvent::RoutingTableChanged(EventParameters::new(event_type, row.InterfaceIndex));
+    let message: NetworkObserverEvent = NetworkObserverEvent::RoutingTableChanged(
+        EventParameters::new(event_type, row.InterfaceLuid.into(), row.InterfaceIndex));
     send_message(caller_context, message);
 }
 
@@ -158,7 +159,8 @@ unsafe extern "system" fn on_interface_change(
     
     let event_type: EventType = event_type.unwrap();
     let row: &MIB_IPINTERFACE_ROW = unsafe { &*row };
-    let message: NetworkObserverEvent = NetworkObserverEvent::InterfaceChanged(EventParameters::new(event_type, row.InterfaceIndex));
+    let message: NetworkObserverEvent = NetworkObserverEvent::InterfaceChanged(
+        EventParameters::new(event_type, row.InterfaceLuid.into(), row.InterfaceIndex));
     send_message(caller_context, message);
 }
 
@@ -191,6 +193,7 @@ unsafe extern "system" fn on_ip_address_change(
 
     let event_type: EventType = event_type.unwrap();
     let row: &MIB_UNICASTIPADDRESS_ROW = unsafe { &*row };
-    let message: NetworkObserverEvent = NetworkObserverEvent::IpAddressChanged(EventParameters::new(event_type, row.InterfaceIndex));
+    let message: NetworkObserverEvent = NetworkObserverEvent::IpAddressChanged(
+        EventParameters::new(event_type, row.InterfaceLuid.into(), row.InterfaceIndex));
     send_message(caller_context, message);
 }

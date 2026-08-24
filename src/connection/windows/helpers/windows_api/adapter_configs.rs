@@ -19,11 +19,13 @@ use windows::Win32::Foundation::{NO_ERROR, WIN32_ERROR};
 use windows::Win32::Networking::WinSock::{ADDRESS_FAMILY, AF_INET, AF_INET6, RouterDiscoveryDisabled};
 use windows::Win32::NetworkManagement::IpHelper::{GetIpInterfaceEntry, MIB_IPINTERFACE_ROW, SetIpInterfaceEntry};
 
+use crate::utils::windows::luid::Luid;
+
 pub const MINIMUM_MTU: u16 = 576;
 pub const DEFAULT_MTU: u16 = 1420;
 
-pub(crate) fn set_ipv4_adapter_configurations(interface_index: u32, mtu: u16) -> Result<(), WIN32_ERROR> {
-    let mut row: MIB_IPINTERFACE_ROW = create_row(interface_index, mtu, AF_INET)?;
+pub(crate) fn set_ipv4_adapter_configurations(interface_luid: Luid, mtu: u16) -> Result<(), WIN32_ERROR> {
+    let mut row: MIB_IPINTERFACE_ROW = create_row(interface_luid, mtu, AF_INET)?;
 
     // Documentation says: "However for IPv4, an application must not try to modify the SitePrefixLength member of the MIB_IPINTERFACE_ROW structure. For IPv4, the SitePrefixLength member must be set to 0."
     // Source: https://learn.microsoft.com/en-us/windows/win32/api/netioapi/nf-netioapi-setipinterfaceentry
@@ -33,14 +35,20 @@ pub(crate) fn set_ipv4_adapter_configurations(interface_index: u32, mtu: u16) ->
     set_adapter_configurations(&mut row)
 }
 
-fn create_row(interface_index: u32, mtu: u16, ip_family: ADDRESS_FAMILY) -> Result<MIB_IPINTERFACE_ROW, WIN32_ERROR> {
+fn create_row(interface_luid: Luid, mtu: u16, ip_family: ADDRESS_FAMILY) -> Result<MIB_IPINTERFACE_ROW, WIN32_ERROR> {
     let mut row: MIB_IPINTERFACE_ROW = MIB_IPINTERFACE_ROW::default();
     row.Family = ip_family;
-    row.InterfaceIndex = interface_index;
+    row.InterfaceLuid = interface_luid.to_net_luid_lh();
 
     // Get current configurations to preserve the other fields
     let status: WIN32_ERROR = unsafe { GetIpInterfaceEntry(&mut row) };
     if status.0 != 0 {
+        let ip_family_str: String = match ip_family {
+            AF_INET => "IPv4".to_string(),
+            AF_INET6 => "IPv6".to_string(),
+            _ => ip_family.0.to_string(),
+        };
+        log::error!("Failed to get current {ip_family_str} interface configurations for interface with LUID {interface_luid} (Error code: {})", status.0);
         return Err(status);
     }
 
@@ -74,7 +82,7 @@ fn set_adapter_configurations(row: &mut MIB_IPINTERFACE_ROW) -> Result<(), WIN32
     }
 }
 
-pub(crate) fn set_ipv6_adapter_configurations(interface_index: u32, mtu: u16) -> Result<(), WIN32_ERROR> {
-    let mut row: MIB_IPINTERFACE_ROW = create_row(interface_index, mtu, AF_INET6)?;
+pub(crate) fn set_ipv6_adapter_configurations(interface_luid: Luid, mtu: u16) -> Result<(), WIN32_ERROR> {
+    let mut row: MIB_IPINTERFACE_ROW = create_row(interface_luid, mtu, AF_INET6)?;
     set_adapter_configurations(&mut row)
 }

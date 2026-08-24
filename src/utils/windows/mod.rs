@@ -17,5 +17,6 @@
 
 pub(crate) mod debouncer;
 pub(crate) mod io_error;
+pub(crate) mod luid;
 pub(crate) mod network_events;
 pub(crate) mod registry_editor;

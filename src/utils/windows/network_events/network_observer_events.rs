@@ -18,6 +18,8 @@
 use std::fmt::{Display, Formatter};
 use std::net::IpAddr;
 
+use crate::utils::windows::luid::Luid;
+
 #[derive(Debug)]
 pub enum NetworkObserverEvent {
     InterfaceSelected(Option<NetworkInterface>),
@@ -30,7 +32,7 @@ impl Display for NetworkObserverEvent {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         match self {
             NetworkObserverEvent::InterfaceSelected(interface) => match interface {
-                Some(interface) => write!(f, "Interface selected. Index: {} (IP: {})", interface.index, interface.ip_addr),
+                Some(interface) => write!(f, "Interface selected. LUID: {}, Index: {} (IP: {})", interface.luid, interface.index, interface.ip_addr),
                 None => write!(f, "No interface selected."),
             },
             NetworkObserverEvent::RoutingTableChanged(event_parameters) => write!(f, "Routing table entry {event_parameters}"),
@@ -42,26 +44,29 @@ impl Display for NetworkObserverEvent {
 
 #[derive(Debug, Clone)]
 pub struct NetworkInterface {
+    pub luid: Luid,
     pub index: u32,
     pub ip_addr: IpAddr,
 }
 
 impl Display for NetworkInterface {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        write!(f, "Interface Index: {} (IP: {})", self.index, self.ip_addr)
+        write!(f, "Interface - LUID: {}, Index: {} (IP: {})", self.luid, self.index, self.ip_addr)
     }
 }
 
 #[derive(Debug)]
 pub struct EventParameters {
     pub(crate) event_type: EventType,
+    pub(crate) interface_luid: Luid,
     pub(crate) interface_index: u32,
 }
 
 impl EventParameters {
-    pub(crate) fn new(event_type: EventType, interface_index: u32) -> Self {
+    pub(crate) fn new(event_type: EventType, interface_luid: Luid, interface_index: u32) -> Self {
         EventParameters {
             event_type,
+            interface_luid,
             interface_index
         }
     }
@@ -69,7 +74,7 @@ impl EventParameters {
 
 impl Display for EventParameters {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{} (Interface index: {})", self.event_type, self.interface_index)
+        write!(f, "{} (Interface - LUID: {}, Index: {})", self.event_type, self.interface_luid, self.interface_index)
     }
 }
 
