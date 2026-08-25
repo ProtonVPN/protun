@@ -31,6 +31,7 @@ use crate::connection::windows::helpers::wintun::constants::{ADAPTER_DESCRIPTION
 use crate::utils::common::OptionIpv6AddrAsString;
 use crate::utils::vector::VecIpAddress;
 use crate::utils::windows::luid::Luid;
+use crate::utils::windows::registry_editor::disable_wintun_interface_netbios;
 
 pub struct WinTunSession {
     _adapter: Arc<Adapter>,
@@ -54,6 +55,8 @@ impl WinTunSession {
             .map_err(|e| ProTunFatalError::WintunAdapterIndexFetchFailed(format!("Failed to get the Wintun adapter index. Error: {e}")))?;
         let interface_luid: Luid = adapter.get_luid().into();
         
+        disable_wintun_interface_netbios();
+
         log::info!("WinTUN uses interface with index {interface_index} and LUID {interface_luid}");
 
         set_ipv4_adapter_configurations(interface_luid, adapter_config.mtu)

@@ -19,7 +19,9 @@ use std::iter::once;
 use std::net::{Ipv4Addr, Ipv6Addr};
 use windows::core::{GUID, PWSTR};
 use windows::Win32::Foundation::{NO_ERROR, WIN32_ERROR};
-use windows::Win32::NetworkManagement::IpHelper::{DNS_INTERFACE_SETTINGS, DNS_INTERFACE_SETTINGS_VERSION1, DNS_SETTING_IPV6, DNS_SETTING_NAMESERVER, SetInterfaceDnsSettings};
+use windows::Win32::NetworkManagement::IpHelper::{DNS_INTERFACE_SETTINGS, DNS_INTERFACE_SETTINGS_VERSION1,
+    DNS_SETTING_IPV6, DNS_SETTING_NAMESERVER, DNS_SETTING_REGISTER_ADAPTER_NAME, DNS_SETTING_REGISTRATION_ENABLED,
+    DNS_SETTINGS_ENABLE_LLMNR, SetInterfaceDnsSettings};
 
 use crate::utils::vector::{VecDistinct, VecIpv4Addr, VecIpv6Addr};
 
@@ -30,7 +32,6 @@ pub(crate) fn set_adapter_ipv4_dns_servers(interface_guid: GUID, ips: &mut Vec<I
     ips.distinct_mut();
 
     let mut settings: DNS_INTERFACE_SETTINGS = create_settings();
-    settings.Flags = DNS_SETTING_NAMESERVER.into();    
     let ips_as_string: String = ips.to_comma_separated_string();
     let mut buffer: Vec<u16> = vec![];
     settings.NameServer = ips_string_to_pwstr(&ips_as_string, &mut buffer);
@@ -41,6 +42,10 @@ pub(crate) fn set_adapter_ipv4_dns_servers(interface_guid: GUID, ips: &mut Vec<I
 fn create_settings() -> DNS_INTERFACE_SETTINGS {
     let mut settings: DNS_INTERFACE_SETTINGS = DNS_INTERFACE_SETTINGS::default();
     settings.Version = DNS_INTERFACE_SETTINGS_VERSION1;
+    settings.Flags = (DNS_SETTING_NAMESERVER | DNS_SETTING_REGISTRATION_ENABLED | DNS_SETTING_REGISTER_ADAPTER_NAME | DNS_SETTINGS_ENABLE_LLMNR).into();
+    settings.RegistrationEnabled = 0;
+    settings.RegisterAdapterName = 0;
+    settings.EnableLLMNR = 0;
 
     settings
 }
@@ -68,7 +73,7 @@ pub(crate) fn set_adapter_ipv6_dns_servers(interface_guid: GUID, ips: &mut Vec<I
     ips.distinct_mut();
 
     let mut settings: DNS_INTERFACE_SETTINGS = create_settings();
-    settings.Flags = (DNS_SETTING_IPV6 | DNS_SETTING_NAMESERVER).into();
+    settings.Flags |= u64::from(DNS_SETTING_IPV6);
     let ips_as_string: String = ips.to_comma_separated_string();
     let mut buffer: Vec<u16> = vec![];
     settings.NameServer = ips_string_to_pwstr(&ips_as_string, &mut buffer);

@@ -17,10 +17,30 @@
 
 use std::path::{Path, PathBuf};
 use winreg::RegKey;
-use winreg::enums::{HKEY_LOCAL_MACHINE, KEY_ALL_ACCESS, KEY_READ};
+use winreg::enums::{HKEY_LOCAL_MACHINE, KEY_ALL_ACCESS, KEY_READ, KEY_SET_VALUE};
 
-use crate::connection::windows::helpers::wintun::constants::ADAPTER_NAME;
+use crate::connection::windows::helpers::wintun::constants::{ADAPTER_GUID_STR, ADAPTER_NAME};
 use crate::utils::vector::VecDistinctString;
+
+pub fn disable_wintun_interface_netbios() {
+    let path: PathBuf = Path::new("SYSTEM")
+        .join("CurrentControlSet")
+        .join("Services")
+        .join("NetBT")
+        .join("Parameters")
+        .join("Interfaces")
+        .join(format!("Tcpip_{ADAPTER_GUID_STR}"));
+
+    let subkey: RegKey = match RegKey::predef(HKEY_LOCAL_MACHINE).open_subkey_with_flags(&path, KEY_SET_VALUE) {
+        Ok(subkey) => subkey,
+        Err(err) => { log::error!("Failed to open NetBT interface subkey. Error: {err}"); return; }
+    };
+
+    match subkey.set_value("NetbiosOptions", &2u32) { // 2 = Disabled
+        Ok(_) => log::info!("Disabled NetBIOS over TCP/IP on the ProTUN adapter"),
+        Err(err) => log::error!("Failed to disable Netbios. Error: {err}"),
+    }
+}
 
 pub fn set_network_adapter_status_text(text: &String) {
     log::debug!("Writing network adapter status '{text}' to registry");
