@@ -29,26 +29,51 @@ import uniffi.protun.LogLevel
 import uniffi.protun.PersistentCache
 
 // This class will be used from background threads, and blocking IO is allowed.
-class PersistentCacheImpl(
+internal class PersistentCacheImpl(
+    private val userId: String,
+    private val storage: PersistentCacheStorage,
+) : PersistentCache {
+
+    override fun put(key: CacheKey, bytes: ByteArray) {
+        storage.put(key, userId, bytes)
+    }
+
+    override fun get(key: CacheKey): ByteArray? =
+        storage.get(key, userId)
+
+    override fun remove(key: CacheKey) {
+        storage.remove(key, userId)
+    }
+
+    override fun clearAll() {
+        storage.clearAll(userId)
+    }
+}
+
+internal class PersistentCacheStorage(
     private val cipher: PersistentCacheCipher?,
     private val logger: Logger,
     context: Context,
-) : PersistentCache {
+) {
 
     private val prefs = context.getSharedPreferences("vpn-core-prefs", Context.MODE_PRIVATE)
 
-    override fun put(key: CacheKey, bytes: ByteArray) {
+    private fun getKey(key: CacheKey, userId: String) = "${key.name}:$userId"
+
+    fun cacheFor(userId: String) = PersistentCacheImpl(userId, this)
+
+    fun put(key: CacheKey, userId: String, bytes: ByteArray) {
         val data = cipher?.encrypt(bytes)?.getOrElse { e ->
             logger.log(LogLevel.ERROR, "PersistentCache: encryption failed for $key: $e")
             return
         } ?: bytes
         prefs.edit {
-            putString(key.name, Base64.encodeToString(data, Base64.NO_WRAP))
+            putString(getKey(key, userId), Base64.encodeToString(data, Base64.NO_WRAP))
         }
     }
 
-    override fun get(key: CacheKey): ByteArray? {
-        val stored = prefs.getString(key.name, null)?.let {
+    fun get(key: CacheKey, userId: String): ByteArray? {
+        val stored = prefs.getString(getKey(key, userId), null)?.let {
             Base64.decode(it, Base64.NO_WRAP)
         } ?: return null
 
@@ -62,13 +87,15 @@ class PersistentCacheImpl(
         }
     }
 
-    override fun clearAll() {
-        prefs.edit { clear() }
+    fun clearAll(userId: String) {
+        prefs.edit {
+            CacheKey.entries.forEach { remove(getKey(it, userId)) }
+        }
     }
 
-    override fun remove(key: CacheKey) {
+    fun remove(key: CacheKey, userId: String) {
         prefs.edit {
-            remove(key.name)
+            remove(getKey(key, userId))
         }
     }
 }

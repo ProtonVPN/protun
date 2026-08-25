@@ -68,7 +68,7 @@ interface ProtonVpnConnectionManager {
      */
     val localAgentStats: Flow<LocalAgentStats>
 
-    fun connect(config: InitialConfig)
+    fun connect(config: InitialConfig, invalidateRequest: InvalidateRequest? = null)
     fun updateInterfaceConfig(interfaceConfig: InterfaceConfig)
     fun updateLocalAgentSettings(localAgentSettings: LocalAgentSettings)
     fun updateApiSelector(selector: ForkSelectorInfo)
@@ -81,12 +81,21 @@ interface ProtonVpnConnectionManager {
      */
     fun setPacketCaptureEnabled(packetCaptureInfo: PacketCaptureInfo?)
 
-    /** Invalidates stored certificate (to be used with user plan changes) */
-    fun invalidateCertificate()
+    /** Invalidates stored certificate (to be used with user plan changes) for a given user. */
+    fun invalidateCertificate(userId: String)
 
     fun disconnect(error: VpnDisconnectError? = null)
 
     fun debugLog()
+}
+
+/**
+ * ProtonVpnConnectionManager.connect param indicating a need to invalidate data for a new connection.
+ * When InvalidateRequest is used it'll always force reconnection.
+ */
+enum class InvalidateRequest {
+    Certificate,
+    All
 }
 
 @Parcelize
@@ -112,7 +121,7 @@ data class InitialConfig(
     val packetCaptureInfo: PacketCaptureInfo? = null,
 
     val mode: ConnectionMode,
-    val sniStrategy: SniStrategy
+    val sniStrategy: SniStrategy,
 ): Parcelable
 
 @Parcelize
@@ -124,6 +133,11 @@ sealed interface ConnectionMode: Parcelable {
     ) : ConnectionMode
 
     data class LocalAgent(
+        /**
+         * User ID to identify per-user data in a persistent cache. Using a different user when
+         * updating a connection will always cause reconnection to the VPN server.
+         */
+        val userId: String,
         val userAgent: String,
         val appVersion: String,
         val settings: LocalAgentSettings,

@@ -29,24 +29,26 @@ import me.proton.vpn.core.api.ForkSelectorInfo
 import me.proton.vpn.core.api.InitialConfig
 import me.proton.vpn.core.api.InterfaceConfig
 import me.proton.vpn.core.api.InterfaceState
+import me.proton.vpn.core.api.InvalidateRequest
 import me.proton.vpn.core.api.LocalAgentSettings
 import me.proton.vpn.core.api.Logger
 import me.proton.vpn.core.api.PacketCaptureInfo
 import me.proton.vpn.core.api.Peer
 import me.proton.vpn.core.api.VpnConnectionState
 import me.proton.vpn.core.api.VpnState
+import me.proton.vpn.core.internal.PersistentCacheStorage
 import me.proton.vpn.core.internal.WallClockMs
 import me.proton.vpn.core.internal.toCoreApi
 import me.proton.vpn.core.internal.toUniFFI
 import me.proton.vpn.core.service.usecases.EstablishTun
 import me.proton.vpn.core.service.usecases.NetworkObserver
+import uniffi.protun.CacheKey
 import uniffi.protun.ConfigUpdate
 import uniffi.protun.Connection
 import uniffi.protun.ConnectionState
 import uniffi.protun.EventCallback
 import uniffi.protun.InitialConnectionConfig
 import uniffi.protun.LogLevel
-import uniffi.protun.PersistentCache
 import uniffi.protun.StateChangedCallback
 import uniffi.protun.TunStreamInfo
 import java.lang.ref.WeakReference
@@ -57,7 +59,7 @@ internal class ConnectionManager(
     private val establishTun: EstablishTun,
     private val wallClockMs: WallClockMs,
     private val logger: Logger,
-    private val cache: PersistentCache,
+    private val cache: PersistentCacheStorage,
 ) {
     data class ActiveConnection(
         val connection: Connection,
@@ -96,14 +98,19 @@ internal class ConnectionManager(
 
     fun connect(
         config: InitialConfig,
+        invalidateRequest: InvalidateRequest?,
         builder: VpnService.Builder,
         socketProtectCallback: ProTunSocketProtectCallback,
         eventCallback: EventCallback,
     ) {
         val currentConfig = activeConnection?.currentConfig
+        val newUserId = config.userId
         if (currentConfig != null) {
             // For local agent mode if there's active connection just update it instead of full restart
-            if (currentConfig.mode is ConnectionMode.LocalAgent && config.mode is ConnectionMode.LocalAgent) {
+            val bothLocalAgentMode = currentConfig.mode is ConnectionMode.LocalAgent && config.mode is ConnectionMode.LocalAgent
+            val sameUser = currentConfig.userId == newUserId
+            if (bothLocalAgentMode && sameUser && invalidateRequest == null) {
+                logger.log(LogLevel.INFO, "pvpn connect: updating live VPN connection")
                 activeConnection = activeConnection?.copy(currentConfig = config)
 
                 val interfaceUpdate = if (config.interfaceConfig != currentConfig.interfaceConfig) {
@@ -128,9 +135,19 @@ internal class ConnectionManager(
                     setPacketCaptureEnabled(config.packetCaptureInfo)
 
                 return
+            } else {
+                logger.log(LogLevel.INFO, "pvpn connect: restarting VPN connection bothLocalAgentMode=$bothLocalAgentMode sameUser=$sameUser invalidateRequest=$invalidateRequest")
             }
 
             clearConnection(VpnConnectionState.Connecting(connections = emptyList(), waitReasons = emptyList()))
+        }
+
+        val userCache = cache.cacheFor(newUserId ?: "")
+        if (invalidateRequest != null) {
+            when (invalidateRequest) {
+                InvalidateRequest.Certificate -> userCache.remove(CacheKey.CERTIFICATE)
+                InvalidateRequest.All -> userCache.clearAll()
+            }
         }
 
         when (val establishResult = establishTun(config.interfaceConfig, builder)) {
@@ -151,7 +168,7 @@ internal class ConnectionManager(
                     stateChangeCallback = stateChangeCallback,
                     socketFdAvailableCallback = socketProtectCallback,
                     eventCallback = eventCallback,
-                    cache = cache,
+                    cache = userCache,
                 )
                 activeConnection = ActiveConnection(
                     connection = nativeConnection,
@@ -225,8 +242,11 @@ internal class ConnectionManager(
         activeConnection?.connection?.provideApiForkSelector(selector.toUniFFI())
     }
 
-    fun invalidateCertificate() {
-        activeConnection?.connection?.invalidateCertificate()
+    fun invalidateCertificate(userId: String) {
+        val connection = activeConnection
+        if (connection?.currentConfig?.userId == userId) {
+            connection.connection.invalidateCertificate()
+        }
     }
 
     fun setPacketCaptureEnabled(packetCaptureInfo: PacketCaptureInfo?) {
@@ -293,3 +313,6 @@ internal class ProTunStateChangedCallback(val weakManager: WeakReference<Connect
         weakManager.clear()
     }
 }
+
+private val InitialConfig.userId: String? get() =
+    (this.mode as? ConnectionMode.LocalAgent)?.userId

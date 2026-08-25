@@ -47,6 +47,7 @@ import kotlinx.coroutines.launch
 import me.proton.vpn.core.api.ForkSelectorInfo
 import me.proton.vpn.core.api.InitialConfig
 import me.proton.vpn.core.api.InterfaceConfig
+import me.proton.vpn.core.api.InvalidateRequest
 import me.proton.vpn.core.api.LocalAgentSettings
 import me.proton.vpn.core.api.Logger
 import me.proton.vpn.core.api.PacketCaptureInfo
@@ -155,7 +156,7 @@ internal class ProtonVpnConnectionManagerImpl(
         }
     }
 
-    override fun connect(config: InitialConfig) {
+    override fun connect(config: InitialConfig, invalidateRequest: InvalidateRequest?) {
         //NOTE: concurrency issues in this class are avoided by delegating all work reading/writing
         //  shared state to the main thread.
         mainScope.launch {
@@ -172,7 +173,7 @@ internal class ProtonVpnConnectionManagerImpl(
                     VpnState.disconnectedWith(VpnDisconnectError.ServiceError("Failed to bind to VPN service"))
                 )
             } else {
-                sendAction(ProTunVpnService.VpnAction.Connect(config))
+                sendAction(ProTunVpnService.VpnAction.Connect(config, invalidateRequest))
             }
         }
     }
@@ -207,10 +208,10 @@ internal class ProtonVpnConnectionManagerImpl(
         }
     }
 
-    override fun invalidateCertificate() {
+    override fun invalidateCertificate(userId: String) {
         mainScope.launch {
-            DependencyContainer.cache.remove(CacheKey.CERTIFICATE)
-            sendAction(ProTunVpnService.VpnAction.Update.InvalidateCertificate)
+            DependencyContainer.cache.remove(CacheKey.CERTIFICATE, userId)
+            sendAction(ProTunVpnService.VpnAction.Update.InvalidateCertificate(userId))
         }
     }
 

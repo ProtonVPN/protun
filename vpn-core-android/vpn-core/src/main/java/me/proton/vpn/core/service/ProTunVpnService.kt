@@ -38,6 +38,7 @@ import me.proton.vpn.core.api.ForegroundServiceNotificationFactory
 import me.proton.vpn.core.api.ForkSelectorInfo
 import me.proton.vpn.core.api.InitialConfig
 import me.proton.vpn.core.api.InterfaceConfig
+import me.proton.vpn.core.api.InvalidateRequest
 import me.proton.vpn.core.api.LocalAgentSettings
 import me.proton.vpn.core.api.Logger
 import me.proton.vpn.core.api.PacketCaptureInfo
@@ -141,7 +142,7 @@ internal class ProTunVpnService : VpnService() {
                     logger.log(LogLevel.INFO, "vpn action: ${vpnAction.javaClass.simpleName}")
                 when (vpnAction) {
                     is VpnAction.Connect -> {
-                        manager.connect(vpnAction.config, Builder(), socketProtectCallback, eventCallback)
+                        manager.connect(vpnAction.config, vpnAction.invalidateRequest, Builder(), socketProtectCallback, eventCallback)
                         if (Build.VERSION.SDK_INT >= 29) {
                             manager.updateAlwaysOn(isAlwaysOn, isLockdownEnabled)
                             logger.log(LogLevel.INFO, "ProTunVpnService always-on=${isAlwaysOn} kill-switch=${isLockdownEnabled}")
@@ -187,8 +188,8 @@ internal class ProTunVpnService : VpnService() {
                                 is VpnAction.Update.ApiSelector ->
                                     manager.provideApiForkSelector(vpnAction.selector)
 
-                                VpnAction.Update.InvalidateCertificate ->
-                                    manager.invalidateCertificate()
+                                is VpnAction.Update.InvalidateCertificate ->
+                                    manager.invalidateCertificate(vpnAction.userId)
                             }
                             true
                         } else {
@@ -244,7 +245,12 @@ internal class ProTunVpnService : VpnService() {
     val state get(): VpnState = manager.state.value
 
     sealed interface VpnAction : Parcelable {
-        @Parcelize data class Connect(val config: InitialConfig) : VpnAction
+
+        @Parcelize data class Connect(
+            val config: InitialConfig,
+            val invalidateRequest: InvalidateRequest?
+        ) : VpnAction
+
         @Parcelize data object Disconnect : VpnAction
         @Parcelize data object DebugLog : VpnAction
 
@@ -256,7 +262,7 @@ internal class ProTunVpnService : VpnService() {
             @Parcelize data class ApiSelector(val selector: ForkSelectorInfo) : Update
             @Parcelize data object RequestConnectionStats : Update
             @Parcelize data object RequestLocalAgentStats : Update
-            @Parcelize data object InvalidateCertificate : Update
+            @Parcelize data class InvalidateCertificate(val userId: String) : Update
         }
     }
 

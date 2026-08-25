@@ -23,7 +23,8 @@ import android.content.Context
 import kotlinx.coroutines.MainScope
 import me.proton.vpn.core.ProtonVpnConnectionManagerImpl
 import me.proton.vpn.core.internal.DependencyContainer
-import me.proton.vpn.core.internal.PersistentCacheImpl
+import me.proton.vpn.core.internal.PersistentCacheStorage
+import uniffi.protun.CacheKey
 import uniffi.protun.LogLevel
 
 /**
@@ -47,8 +48,14 @@ interface ProtonVpnCore {
 
     /**
      * Clears persistent data cached for recent VPN session.
+     * @param userId User ID to clear cache for.
      */
-    suspend fun clearCache()
+    suspend fun clearCache(userId: String)
+
+    /**
+     * Clears certificate from persistent cache for a given userId.
+     */
+    suspend fun clearCertificate(userId: String)
 
     companion object {
 
@@ -95,7 +102,7 @@ interface ProtonVpnCore {
                 notificationFactory = dependencies.notificationFactory,
                 systemEventHandler = dependencies.systemEventHandler,
                 nativeLogLevel = nativeLogLevel.takeIf { includeNativeLogs },
-                cache = PersistentCacheImpl(persistentCacheCipher, logger, appContext),
+                cache = PersistentCacheStorage(persistentCacheCipher, logger, appContext),
             )
 
             return vpn
@@ -107,8 +114,12 @@ internal class ProtonVpnCoreImpl(
     override val connectionManager: ProtonVpnConnectionManager,
 ) : ProtonVpnCore {
 
-    override suspend fun clearCache() {
-        DependencyContainer.cache.clearAll()
+    override suspend fun clearCache(userId: String) {
+        DependencyContainer.cache.clearAll(userId)
+    }
+
+    override suspend fun clearCertificate(userId: String) {
+        DependencyContainer.cache.remove(CacheKey.CERTIFICATE, userId)
     }
 }
 
