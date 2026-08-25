@@ -150,6 +150,11 @@ sealed interface VpnDisconnectError : Parcelable {
          */
         data class UnrecoverableJail(val reason: WaitJailReason): AppError
 
+        /**
+         * App given up on certificate refresh and disconnected.
+         */
+        data object FailedToRefreshCertificate: AppError
+
         /** Generic error with throwable. */
         data class Other(val e: Throwable): AppError
     }
