@@ -186,7 +186,7 @@ pub struct ForkSelectorInfo {
 // FIXME: we should provide more cookie info in the future
 // if we want a full cookie support between native and local-agent
 pub struct Cookies {
-    pub cookies: Vec<Cookie>,
+    pub items: Vec<Cookie>,
 }
 
 #[cfg_attr(feature = "uniffi", derive(uniffi::Record))]

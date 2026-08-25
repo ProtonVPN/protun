@@ -273,7 +273,7 @@ pub async fn get_session_fork_selector_async(
         .expect("fork failed");
 
     let cookies = Cookies {
-        cookies: muon_cookies.read().unwrap().iter().map(|c| c.into()).collect()
+        items: muon_cookies.read().unwrap().iter().map(|c| c.into()).collect()
     };
 
     ForkSelectorInfo { selector, cookies }

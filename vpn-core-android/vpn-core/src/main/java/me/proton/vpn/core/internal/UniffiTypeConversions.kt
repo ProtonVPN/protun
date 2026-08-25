@@ -280,7 +280,7 @@ fun uniffi.protun.AgentConnectionWaitReason.toCoreApi(): AgentConnectionWaitReas
 
 fun uniffi.protun.ForkSelectorInfo.toCoreApi() = ForkSelectorInfo(
     selector = selector,
-    cookies = cookies.cookies.map { Cookie(it.name, it.value) },
+    cookies = cookies.items.map { Cookie(it.name, it.value) },
 )
 
 @OptIn(ExperimentalEncodingApi::class)

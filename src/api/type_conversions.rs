@@ -271,6 +271,6 @@ impl From<&Cookie> for RawCookie<'_> {
 #[cfg(feature = "local-agent")]
 impl From<Cookies> for MuonCookies {
     fn from(value: Cookies) -> Self {
-        value.cookies.iter().map(Into::into).collect()
+        value.items.iter().map(Into::into).collect()
     }
 }
