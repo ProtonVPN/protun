@@ -15,7 +15,7 @@
 // You should have received a copy of the GNU General Public License
 // along with ProtonVPN.  If not, see <https://www.gnu.org/licenses/>.
 
-use crate::api::connection::{ConnectionMode, InitialConnectionConfig, PcapFileInfo, PeerInfo, SniStrategy};
+use crate::api::connection::{ConnectionMode, InitialConnectionConfig, SniStrategy};
 use crate::api::test_utils::muon_test_auth::get_session_fork_selector;
 use std::sync::Arc;
 use std::sync::mpsc::Receiver;
@@ -108,6 +108,30 @@ fn no_local_agent_connection() {
     })
 }
 
+#[test_log::test]
+fn switch_peer() {
+    let (mut config, fork_config) = get_config();
+    let peer1 = config.initial_connection_config.peers[0].clone();
+    let peer2 = config.initial_connection_config.peers[1].clone();
+    config.initial_connection_config.peers = vec![peer1.clone()];
+
+    let peer1_id = peer1.peer_id.clone();
+    let peer2_id = peer2.peer_id.clone();
+    connection_test_template(config.initial_connection_config, fork_config, |connection, receiver, fork_config| {
+        await_state(&receiver, &connection, &fork_config, |state| match &state.connection_state {
+            ConnectionState::Connected { peer, .. } => peer.peer_id == peer1_id,
+            _ => false
+        });
+
+        connection.update_peers(vec![peer2]);
+
+        await_state(&receiver, &connection, &fork_config, |state| match &state.connection_state {
+            ConnectionState::Connected { peer, .. } => peer.peer_id == peer2_id,
+            _ => false
+        });
+    });
+}
+
 fn get_config() -> (ParsedConfig, Option<ParsedForkConfig>) {
     let config_path = std::env::var("REAL_CONNECTION_CONFIG")
         .unwrap_or("./config.ini".to_string());
@@ -117,7 +141,7 @@ fn get_config() -> (ParsedConfig, Option<ParsedForkConfig>) {
 fn connection_test_template(
     config: InitialConnectionConfig,
     fork_config: Option<ParsedForkConfig>,
-    block: fn(&Connection, &Receiver<TestMessage>, &Option<ParsedForkConfig>) -> (),
+    block: impl FnOnce(&Connection, &Receiver<TestMessage>, &Option<ParsedForkConfig>) -> (),
 ) {
     let (sender, receiver) = std::sync::mpsc::channel();
     let sender_clone = sender.clone();
@@ -153,14 +177,14 @@ fn await_state(
     receiver: &Receiver<TestMessage>,
     connection: &Connection,
     fork_config: &Option<ParsedForkConfig>,
-    predicate: fn(&VpnState) -> bool
+    predicate: impl Fn(&VpnState) -> bool
 ) {
     let deadline = std::time::Instant::now() + std::time::Duration::from_secs(20);
     while let Ok(msg) = receiver.recv_timeout(deadline - std::time::Instant::now()) {
         match msg {
             TestMessage::Event(event) => {
                 match event {
-                    Event::Error { error: ErrorEvent::ForkSelectorNeeded } => {
+                    Event::LocalAgentError { error: ErrorEvent::ForkSelectorNeeded } => {
                         if let Some(fork_config) = fork_config {
                             let user = fork_config.username.clone();
                             let pass = fork_config.password.clone();
