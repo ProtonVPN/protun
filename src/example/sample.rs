@@ -170,7 +170,7 @@ fn main()  {
         if let Some(fork_config) = fork_config {
             while let Ok(event) = event_channel_receiver.recv() {
                 match event {
-                    Event::Error { error: ErrorEvent::ForkSelectorNeeded } => {
+                    Event::LocalAgentError { error: ErrorEvent::ForkSelectorNeeded } => {
                         let user = fork_config.username.clone();
                         let pass = fork_config.password.clone();
                         eprintln!("using login app version {}", fork_config.app_version);

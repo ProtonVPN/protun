@@ -16,7 +16,7 @@
 // along with ProtonVPN.  If not, see <https://www.gnu.org/licenses/>.
 
 use std::collections::VecDeque;
-use std::io::{self, Read, Write};
+use std::io::{Read, Write};
 use std::net::Shutdown;
 use mio::event;
 use mio::net::TcpStream;

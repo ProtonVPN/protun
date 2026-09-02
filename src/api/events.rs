@@ -47,7 +47,7 @@ pub enum Event {
     },
 
     #[cfg(feature = "local-agent")]
-    Error { error: ErrorEvent },
+    LocalAgentError { error: ErrorEvent },
 }
 
 #[cfg_attr(feature = "uniffi", derive(uniffi::Enum))]

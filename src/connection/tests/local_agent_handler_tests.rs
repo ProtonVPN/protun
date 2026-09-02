@@ -133,7 +133,7 @@ fn same_peer_reconnect_preserves_established() {
 fn muon_fork_selector_needed_emits_api_session_expired() {
     let mut handler = LocalAgentHandler::new();
     let event = handler.handle_message(LocalAgentMessage::MuonForkSelectorNeeded);
-    assert!(matches!(event, Some(Event::Error { error: ErrorEvent::ForkSelectorNeeded })));
+    assert!(matches!(event, Some(Event::LocalAgentError { error: ErrorEvent::ForkSelectorNeeded })));
 }
 
 fn peer(ip: &str) -> PeerConnectionInfo {

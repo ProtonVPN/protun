@@ -136,7 +136,7 @@ impl LocalAgentHandler {
             LocalAgentMessage::Value(value) => self.handle_value(value),
             LocalAgentMessage::Error(error) => self.handle_error(error),
             LocalAgentMessage::MuonForkSelectorNeeded => {
-                Some(Event::Error { error: ErrorEvent::ForkSelectorNeeded })
+                Some(Event::LocalAgentError { error: ErrorEvent::ForkSelectorNeeded })
             }
             LocalAgentMessage::LocalAgentConnected => {
                 self.is_connected = true;
@@ -319,7 +319,7 @@ impl LocalAgentHandler {
                 return Some(muon_error_event(ApiEndpoint::Auth, muon_error)),
 
             LocalAgentError::TooManyTriesOnCertRefresh =>
-                return Some(Event::Error { error: ErrorEvent::CertificateRefreshFatalError }),
+                return Some(Event::LocalAgentError { error: ErrorEvent::CertificateRefreshFatalError }),
 
             LocalAgentError::ServerError(e) => {
                 match e {
@@ -381,7 +381,7 @@ impl LocalAgentHandler {
 }
 
 fn policy_refused(setting: LocalAgentSettingType) -> Option<Event> {
-    Some(Event::Error { error: ErrorEvent::LocalAgentSettingPolicyRefused { setting } })
+    Some(Event::LocalAgentError { error: ErrorEvent::LocalAgentSettingPolicyRefused { setting } })
 }
 
 const AVG_AD_SIZE_BYTES: u64 = 200 * 1024;
@@ -409,7 +409,7 @@ fn update_local_agent_stats_with_estimates(event: &mut Event) {
 }
 
 fn muon_error_event(endpoint: ApiEndpoint, muon_error: muon::error::Error) -> Event {
-    Event::Error { error: ErrorEvent::ApiError {
+    Event::LocalAgentError { error: ErrorEvent::ApiError {
         endpoint,
         http_code: muon_error.http_code().map(Into::into),
         proton_code: muon_error.proton_error_code().map(Into::into),

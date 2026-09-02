@@ -254,7 +254,7 @@ fun Event.toCoreApi(): VpnConnectionEvent? = when (this) {
     is Event.LocalAgentStats -> null // LocalAgentStats are exposed in localAgentStats flow, not as events
     is Event.PacketCaptureStarted -> VpnConnectionEvent.PacketCaptureStarted(info.toCoreApi())
     is Event.PacketCaptureStopped -> VpnConnectionEvent.PacketCaptureStopped(reason.toCoreApi())
-    is Event.Error -> VpnConnectionEvent.Error(error.toCoreApi())
+    is Event.LocalAgentError -> VpnConnectionEvent.Error(error.toCoreApi())
 }
 
 private fun ErrorEvent.toCoreApi(): VpnErrorEvent = when (this) {

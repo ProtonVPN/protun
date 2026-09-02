@@ -648,7 +648,7 @@ impl PvpnConnection {
     fn emit_event(&self, event: Event) {
         match &event {
             #[cfg(feature = "local-agent")]
-            Event::Error { error } => log::warn!("error event: {:?}", error),
+            Event::LocalAgentError { error } => log::warn!("error event: {:?}", error),
             _ => log::debug!("emitting event: {:?}", event),
         }
         self.event_callback.on_event(event);
