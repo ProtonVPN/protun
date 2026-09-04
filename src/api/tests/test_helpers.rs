@@ -26,7 +26,7 @@ use std::sync::RwLock;
 use std::time::Instant;
 use mio::net::UdpSocket;
 use pvpnclient::LocalAgentMessage;
-use rand::Rng;
+use rand::RngExt;
 
 use crate::{
     api::{
