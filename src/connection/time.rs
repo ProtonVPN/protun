@@ -40,20 +40,50 @@ impl ClientRealtimeFactory {
     }
 }
 
+/// UNIX monotonic clock that keeps advancing while the system is suspended.
+///
+/// Darwin: CLOCK_MONOTONIC includes time asleep (CLOCK_UPTIME_RAW, which backs
+/// `std::time::Instant`, does not).
+/// Linux/Android: CLOCK_BOOTTIME includes time suspended (CLOCK_MONOTONIC does not).
+
+#[cfg(all(feature = "unix", target_vendor = "apple"))]
+pub(crate) const CLOCK_ID: libc::clockid_t = libc::CLOCK_MONOTONIC;
+
+#[cfg(all(feature = "unix", any(target_os = "linux", target_os = "android")))]
+pub(crate) const CLOCK_ID: libc::clockid_t = libc::CLOCK_BOOTTIME;
+
+#[cfg(feature = "unix")]
+fn monotonic_now() -> Duration {
+    let mut ts = libc::timespec { tv_sec: 0, tv_nsec: 0 };
+    let res = unsafe { libc::clock_gettime(CLOCK_ID, &mut ts) };
+    if res != 0 {
+        log::error!("clock_gettime({CLOCK_ID}) failed: {:?}", std::io::Error::last_os_error());
+    }
+    Duration::new(ts.tv_sec as u64, ts.tv_nsec as u32)
+}
+
+/// FIXME: windows suspend-inclusive clocks will be introduced in a follow-up
+#[cfg(not(feature = "unix"))]
+fn monotonic_now() -> Duration {
+    use std::sync::OnceLock;
+    static START: OnceLock<std::time::Instant> = OnceLock::new();
+    START.get_or_init(std::time::Instant::now).elapsed()
+}
+
 #[derive(Clone)]
 pub(crate) struct ClientMonotonicFactory {
-    pub(crate) initial_instant: std::time::Instant
+    initial: Duration,
 }
 
 impl ClientMonotonicFactory {
     pub(crate) fn new() -> Self {
         Self {
-            initial_instant: std::time::Instant::now()
+            initial: monotonic_now()
         }
     }
 
-    pub(crate) fn duration_since_initial(&self) -> std::time::Duration {
-        std::time::Instant::now().duration_since(self.initial_instant)
+    pub(crate) fn duration_since_initial(&self) -> Duration {
+        monotonic_now().saturating_sub(self.initial)
     }
 }
 
@@ -62,6 +92,6 @@ impl InstantFactory for ClientMonotonicFactory {
     type Instant = Instant;
 
     fn now(&self) -> Self::Instant {
-        Instant::from_duration(self.initial_instant.elapsed())
+        Instant::from_duration(self.duration_since_initial())
     }
 }
