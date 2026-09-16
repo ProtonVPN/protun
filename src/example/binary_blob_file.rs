@@ -15,10 +15,12 @@
 // You should have received a copy of the GNU General Public License
 // along with ProtonVPN.  If not, see <https://www.gnu.org/licenses/>.
 
-use std::fs::{File, create_dir_all};
+use std::fs::{create_dir_all, File, OpenOptions};
 use std::path::Path;
 use std::io;
 use std::io::{Read, Seek, Write};
+#[cfg(feature = "unix")]
+use std::os::unix::fs::OpenOptionsExt;
 
 pub(crate) struct BinaryBlobFile {
     file: File,
@@ -28,7 +30,13 @@ impl BinaryBlobFile {
         if let Some(parent) = path.parent() {
             create_dir_all(parent).expect("Failed to create directories for file stream");
         }
-        let file = File::options()
+        let mut options = File::options();
+        #[cfg(feature = "unix")]
+        {
+            options.mode(0o600); // Make sure the file is never readable by other users
+            options.custom_flags(libc::O_NOFOLLOW);
+        }
+        let file = options
             .create(true)
             .write(true)
             .read(true)

@@ -20,7 +20,10 @@ use std::path::Path;
 use std::io;
 use std::io::Write;
 #[cfg(feature = "unix")]
-use std::os::fd::FromRawFd;
+use std::os::{
+    fd::FromRawFd,
+    unix::fs::OpenOptionsExt,
+};
 use crate::api::connection::{FileWriteMode, PcapFileInfo, PcapFile};
 
 pub(crate) struct PcapStream {
@@ -46,7 +49,15 @@ impl PcapStream {
                     create_dir_all(parent)?;
                 }
 
-                File::options()
+
+                let mut options = File::options();
+                #[cfg(feature = "unix")]
+                {
+                    options.mode(0o600); // Make sure PCAP is never readable by other users
+                    options.custom_flags(libc::O_NOFOLLOW);
+                }
+
+                options
                     .create(true)
                     .write(true)
                     .append(append)
