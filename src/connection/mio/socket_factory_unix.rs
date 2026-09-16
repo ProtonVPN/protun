@@ -50,6 +50,7 @@ impl MioSocketFactory for SocketFactoryUnix {
         // (needed by android to protect the socket from being routed via tun)
         let sock = Socket::new(Domain::for_address(addr), Type::STREAM, None)?;
         sock.set_nonblocking(true)?;
+        sock.set_tcp_nodelay(true)?;
         sock.set_send_buffer_size(TCP_SEND_BUFFER_SIZE)?;
         sock.set_recv_buffer_size(TCP_RECV_BUFFER_SIZE)?;
         let fd = sock.as_raw_fd();
