@@ -17,6 +17,7 @@
 
 use std::{io, net::SocketAddr};
 use crate::connection::{streams::{PollResult, PollWaker, Stream, Streams}};
+use crate::connection::mio::poll_timer::SuspendInclusivePollTimer;
 use mio::{event, Events, Poll, Token, Waker};
 use pvpnclient::{Deadline, StreamId};
 use crate::api::connection::TunStreamInfo;
@@ -29,6 +30,8 @@ pub(crate) type TunStreamUnixType = crate::connection::mio::tun_apple::TunStream
 pub(crate) type TunStreamUnixType = crate::connection::mio::tun_unix::TunStreamUnix;
 
 const POLL_WAKER_TOKEN: Token = Token(0);
+const POLL_TIMER_TOKEN: Token = Token(1);
+const FIRST_STREAM_TOKEN: usize = POLL_TIMER_TOKEN.0 + 1;
 const EVENTS_CAPACITY: usize = 512; // Safe value for max number of simultaneous streams
 
 pub(crate) trait MioStream: Stream {
@@ -44,6 +47,7 @@ pub(crate) trait MioSocketFactory {
 pub(crate) struct MioStreams {
     streams: Vec<MioStreamInfo>,
     poll: Poll,
+    poll_timer: SuspendInclusivePollTimer,
     events: Events,
     next_token: usize,
     socket_factory: Box<dyn MioSocketFactory>,
@@ -66,11 +70,13 @@ impl MioStreams {
         socket_factory: Box<dyn MioSocketFactory>,
         poll: Poll,
     ) -> Result<Self, io::Error> {
+        let poll_timer = SuspendInclusivePollTimer::new(poll.registry(), POLL_TIMER_TOKEN);
         let mut ret = MioStreams {
             streams: Vec::new(),
             poll,
+            poll_timer,
             events: Events::with_capacity(EVENTS_CAPACITY),
-            next_token: POLL_WAKER_TOKEN.0 + 1,
+            next_token: FIRST_STREAM_TOKEN,
             socket_factory,
         };
         if let Some(tun) = tun {
@@ -117,12 +123,15 @@ impl Streams for MioStreams {
     }
 
     fn poll(&mut self, deadline: Deadline) -> io::Result<Vec<PollResult>> {
-        self.poll.poll(&mut self.events, deadline)?;
+        let timeout = self.poll_timer.arm(deadline);
+        self.poll.poll(&mut self.events, timeout)?;
         let mut ret = Vec::new();
         for event in self.events.iter() {
             let token = event.token();
             if token == POLL_WAKER_TOKEN {
                 log::debug!("poll waker triggered");
+            } else if token == POLL_TIMER_TOKEN {
+                self.poll_timer.on_expired();
             } else {
                 let stream = get_stream_by_token(&mut self.streams, token);
                 if let Some(stream) = stream {

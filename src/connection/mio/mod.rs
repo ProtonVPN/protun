@@ -27,6 +27,7 @@ pub(crate) mod tun_unix;
 #[cfg(feature = "apple")]
 pub(crate) mod tun_apple;
 
+pub(crate) mod poll_timer;
 pub(crate) mod streams;
 
 mod tcp;

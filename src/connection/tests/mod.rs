@@ -17,4 +17,7 @@
 
 mod local_agent_handler_tests;
 mod network_recovery_handler_tests;
+#[cfg(feature = "mio")]
+mod poll_timer_tests;
+mod time_tests;
 mod util_tests;
