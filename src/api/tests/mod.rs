@@ -30,6 +30,9 @@ mod dummy_connection_tests;
 #[cfg(feature = "local-agent")]
 mod dummy_local_agent_tests;
 
+#[cfg(feature = "local-agent")]
+mod certificate_duration_tests;
+
 #[cfg(feature = "mio")]
 #[cfg(feature = "local-agent")]
 #[cfg(feature = "real-connection-tests")]

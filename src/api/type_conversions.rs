@@ -23,14 +23,14 @@ use pvpnclient::MuonCookies;
 
 use crate::api::connection::{CLIENT_PRIV_KEY_SIZE_BYTES, IpAddress, PEER_PUB_KEY_SIZE_BYTES, WgClientPrivateKey, WgPeerPublicKey, ConnectionMode, CacheKey, PersistentCache};
 #[cfg(feature = "local-agent")]
-use crate::api::connection::{Cookie, Cookies};
+use crate::api::connection::{CertificateDuration, Cookie, Cookies};
 use crate::api::events::Event;
 use crate::connection::pvpn_client::PvpnClientMode;
 
 #[cfg(feature = "local-agent")]
 use crate::api::local_agent::{LocalAgentSettings, NetshieldLevel, Restriction};
 #[cfg(feature = "local-agent")]
-use pvpnclient::{Ed25519PrivateKey, LocalAgentCertificate, MuonAuth, SessionSettings};
+use pvpnclient::{CertificateApiDuration, Ed25519PrivateKey, LocalAgentCertificate, MuonAuth, SessionSettings};
 #[cfg(feature = "local-agent")]
 use pvpnclient::cookie_store::RawCookie;
 
@@ -137,6 +137,18 @@ impl From<LocalAgentSettings> for SessionSettings {
 }
 
 #[cfg(feature = "local-agent")]
+impl From<CertificateDuration> for CertificateApiDuration {
+    fn from(value: CertificateDuration) -> Self {
+        match value {
+            CertificateDuration::Seconds { count } => CertificateApiDuration::Seconds(count),
+            CertificateDuration::Minutes { count } => CertificateApiDuration::Minutes(count),
+            CertificateDuration::Hours { count } => CertificateApiDuration::Hours(count),
+            CertificateDuration::Days { count } => CertificateApiDuration::Days(count),
+        }
+    }
+}
+
+#[cfg(feature = "local-agent")]
 impl From<NetshieldLevel> for pvpnclient::NetshieldLevel {
     fn from(value: NetshieldLevel) -> Self {
         match value {
@@ -204,13 +216,15 @@ impl ConnectionMode {
                 app_version,
                 user_agent,
                 muon_env,
+                certificate_duration,
             } => PvpnClientMode::LocalAgent {
                 app_version: app_version.clone(),
                 user_agent: user_agent.clone(),
                 private_key: cache.get(CacheKey::PrivateKey).map(to_private_key).transpose()?,
                 certificate: cache.get(CacheKey::Certificate).map(to_certificate).transpose()?,
                 muon_auth: cache.get(CacheKey::ApiSession).map(to_muon_auth).transpose()?,
-                muon_env: muon_env.clone()
+                muon_env: muon_env.clone(),
+                certificate_duration: certificate_duration.map(Into::into),
             }
         })
     }

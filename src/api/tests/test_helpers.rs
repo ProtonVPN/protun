@@ -415,6 +415,7 @@ pub(crate) fn prepare_local_agent_connection_test(
                     app_version: "android-vpn@0.0.0".to_string(),
                     settings,
                     muon_env: MuonEnv::Prod,
+                    certificate_duration: None,
                 },
             };
 

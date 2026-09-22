@@ -79,7 +79,8 @@ pub fn parse_ini_config(path: String) -> Result<(ParsedConfig, Option<ParsedFork
             user_agent,
             app_version,
             settings: Default::default(),
-            muon_env: muon_env
+            muon_env: muon_env,
+            certificate_duration: None,
         }
     } else {
         let key = ini_config["mode"]["client_private_key"].clone();

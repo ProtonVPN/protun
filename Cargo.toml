@@ -18,7 +18,7 @@ itertools = "0.15.0"
 libc = { version = "0.2.189", optional = true }
 log = "0.4.29"
 mio = { version = "1.2.3", features = ["net", "os-poll", "os-ext"], optional = true }
-pvpnclient = { version = "~3.3.0", registry = "proton" }
+pvpnclient = { version = "~4.0.0", registry = "proton" }
 rustls-pki-types = { version = "1.14", optional = true, default-features = false }
 socket2 = { version = "0.6.5", optional = true }
 uniffi = { version = "0.31.0", features = ["cli"], optional = true } # 0.31.0 is the highest uniffi version supported for C#: https://github.com/NordSecurity/uniffi-bindgen-cs
@@ -49,7 +49,7 @@ winreg = { version = "0.55", optional = true }
 wintun = { version = "0.5.1", optional = true }
 
 [dependencies.muon]
-version = "2"
+version = "3"
 registry = "proton"
 features = ["transport-hyper", "lenient", "other-product", "unsealed"]
 default-features = false
@@ -65,7 +65,7 @@ serde = { version = "1.0", features = ["derive"] }
 env_logger = "0.11.5"
 test-log = "0.2.18"
 rand = "0.10"
-pvpnclient = { version = "~3.3.0", registry = "proton", features = ["testing", "local-agent"] }
+pvpnclient = { version = "~4.0.0", registry = "proton", features = ["testing", "local-agent"] }
 protun = { path = ".", features = ["test_utils"] }
 
 [features]

@@ -234,7 +234,22 @@ pub enum ConnectionMode {
         app_version: String,
         settings: LocalAgentSettings,
         muon_env: MuonEnv,
+        /// How long the client certificates asked from the API should stay valid. [None] leaves the
+        /// choice to the API. This is fixed for the lifetime of the connection.
+        #[cfg_attr(feature = "uniffi", uniffi(default = None))]
+        certificate_duration: Option<CertificateDuration>,
     },
+}
+
+/// A lifetime to ask the API for when requesting a client certificate.
+#[cfg_attr(feature = "uniffi", derive(uniffi::Enum))]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[cfg(feature = "local-agent")]
+pub enum CertificateDuration {
+    Seconds { count: u32 },
+    Minutes { count: u32 },
+    Hours { count: u32 },
+    Days { count: u32 },
 }
 
 #[cfg_attr(feature = "uniffi", derive(uniffi::Enum))]

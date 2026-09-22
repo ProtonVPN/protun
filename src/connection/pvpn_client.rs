@@ -31,7 +31,7 @@ use crate::connection::time::{ClientMonotonicFactory, ClientRealtimeFactory};
 use crate::connection::util::{error_kind_to_socket_err};
 
 #[cfg(feature = "local-agent")]
-use pvpnclient::{Ed25519PrivateKey, LocalAgentAction, LocalAgentCertificate, LocalAgentMessage, MuonAuth};
+use pvpnclient::{CertificateApiDuration, Ed25519PrivateKey, LocalAgentAction, LocalAgentCertificate, LocalAgentMessage, MuonAuth};
 #[cfg(feature = "local-agent")]
 use muon::Environment;
 #[cfg(feature = "local-agent")]
@@ -101,7 +101,8 @@ pub(crate) enum PvpnClientMode {
         private_key: Option<Ed25519PrivateKey>,
         certificate: Option<LocalAgentCertificate>,
         muon_auth: Option<MuonAuth>,
-        muon_env: MuonEnv
+        muon_env: MuonEnv,
+        certificate_duration: Option<CertificateApiDuration>,
     },
 
     NoLocalAgent {
@@ -132,7 +133,8 @@ impl <'a> PvpnClientImpl<'a> {
                 private_key,
                 certificate,
                 muon_auth,
-                muon_env
+                muon_env,
+                certificate_duration,
             } => {
                 use muon::common::Server;
                 use muon::env::Env as _;
@@ -164,6 +166,10 @@ impl <'a> PvpnClientImpl<'a> {
                 let muon_app = muon::App::new(app_version)
                     .map_err(|e| io::Error::new(ErrorKind::Other, e))?
                     .with_user_agent(user_agent);
+                let builder = match certificate_duration {
+                    Some(duration) => builder.with_certificate_duration(duration),
+                    None => builder,
+                };
                 builder.with_local_agent(private_key, certificate, muon_app.into(), muon_auth, Some(env))
             }
             #[cfg(feature = "local-agent")]
