@@ -22,7 +22,7 @@ use crate::api::state::{InterfaceError, InterfaceState};
 use crate::api::windows::connection_windows::SocketConfig;
 use crate::api::windows::protun_error::ProTunFatalError;
 use crate::connection::pvpn_connection::{PvpnMessage, SendPvpnMessage};
-use crate::connection::streams::{PollResult, Stream, Streams};
+use crate::connection::streams::{extract_socket_stream_ids, PollResult, Stream, Streams};
 use crate::connection::windows::helpers::poll_waker::WindowsPollWaker;
 use crate::connection::windows::helpers::routes::VpnServerRouteManager;
 use crate::connection::windows::helpers::sockets::SocketInterface;
@@ -83,6 +83,10 @@ impl WindowsStreams {
         streams
     }
 
+    pub(crate) fn is_network_available(&self) -> bool {
+        self.network_observer.is_network_available()
+    }
+
     fn register_stream(&mut self, stream_id: StreamId, stream: Box<dyn WindowsStream>) {
         log::debug!("Registering stream with ID {stream_id}");
         self.streams.push(WindowsStreamInfo { stream_id, stream });
@@ -122,20 +126,18 @@ impl WindowsStreams {
     }
 
     fn send_streams_event(&mut self) {
-        let first_non_tun_stream: Option<&WindowsStreamInfo> = self.streams.iter().find(|stream| stream.stream_id != StreamId::TUN_STREAM_ID);
-        let current_internet_interface: Option<NetworkInterface> = match first_non_tun_stream {
-            Some(stream) => {
-                let interface: &SocketInterface = stream.stream.get_interface();
-                Some(NetworkInterface {
+        let interfaces_in_use: Vec<NetworkInterface> = self.streams.iter()
+            .filter(|stream| stream.stream_id > StreamId::TUN_STREAM_ID)
+            .map(|s| {
+                let interface: &SocketInterface = s.stream.get_interface();
+                NetworkInterface {
                     luid: interface.interface_luid,
                     index: interface.interface_index,
                     ip_addr: interface.address.ip(),
-                })
-            },
-            None => None,
-        };
+                }})
+           .collect();
 
-        self.network_observer.send_current_interface(current_internet_interface);
+        self.network_observer.send_interfaces_in_use(interfaces_in_use);
     }
 }
 
@@ -156,7 +158,7 @@ impl Streams for WindowsStreams {
 
     fn open_new_tcp_stream(&mut self, stream_id: StreamId, remote_socket: SocketAddr) -> io::Result<()> {
         log::debug!("Opening up a new TCP stream");
-        match TcpSocketStream::new(&self.vpn_server_route_manager, remote_socket) {
+        match TcpSocketStream::new(&self.network_observer, &self.vpn_server_route_manager, remote_socket) {
             Ok(tcp_socket_stream) => {
                 self.register_stream(stream_id, Box::new(tcp_socket_stream));
                 self.send_streams_event();
@@ -168,7 +170,7 @@ impl Streams for WindowsStreams {
 
     fn open_new_udp_stream(&mut self, stream_id: StreamId, remote_socket: SocketAddr) -> io::Result<()> {
         log::debug!("Opening up a new UDP socket");
-        match UdpSocketStream::new(&self.vpn_server_route_manager, remote_socket, &self.udp_socket_config) {
+        match UdpSocketStream::new(&self.network_observer, &self.vpn_server_route_manager, remote_socket, &self.udp_socket_config) {
             Ok(udp_socket_stream) => {
                 self.register_stream(stream_id, Box::new(udp_socket_stream));
                 self.send_streams_event();
@@ -215,6 +217,10 @@ impl Streams for WindowsStreams {
             Some(_) => InterfaceState::Up { error: last_interface_error },
             None => InterfaceState::Down { last_error: last_interface_error },
         }
+    }
+
+    fn get_socket_stream_ids(&self) -> Vec<StreamId> {
+        extract_socket_stream_ids(self.streams.iter().map(|s| s.stream_id))
     }
 }
 

@@ -24,12 +24,12 @@ use std::os::windows::io::AsRawSocket;
 use windows::Win32::Foundation::HANDLE;
 use windows::Win32::Networking::WinSock::SOCKET;
 use crate::connection::streams::{PendingWrite, Stream, StreamResult, WouldBlock};
-use crate::connection::windows::helpers::internet_interface_finder::{InterfaceFinderLogMode, get_ipv4_internet_interface, get_ipv6_internet_interface};
 use crate::connection::windows::helpers::routes::{VpnServerRouteGuard, VpnServerRouteManager};
 use crate::connection::windows::helpers::sockets::SocketInterface;
 use crate::connection::windows::streams::{WindowsStream, WindowsStreamState};
 use crate::connection::windows::helpers::socket_handle::{SocketEvent, SocketHandle};
 use crate::utils::windows::io_error::{Transport, OsErrorToSocketErrorAction, SocketErrorAction};
+use crate::utils::windows::network_events::network_observer::NetworkObserver;
 
 pub(crate) struct TcpSocketStream {
     socket: TcpStream,
@@ -42,8 +42,8 @@ pub(crate) struct TcpSocketStream {
 }
 
 impl TcpSocketStream {
-    pub fn new(vpn_server_route_manager: &VpnServerRouteManager, remote_socket: SocketAddr) -> io::Result<TcpSocketStream> {
-        let (tcp_stream, socket_interface, route) = create(vpn_server_route_manager, remote_socket)?;
+    pub fn new(network_observer: &NetworkObserver, vpn_server_route_manager: &VpnServerRouteManager, remote_socket: SocketAddr) -> io::Result<TcpSocketStream> {
+        let (tcp_stream, socket_interface, route) = create(network_observer, vpn_server_route_manager, remote_socket)?;
         let raw_socket: SOCKET = SOCKET(tcp_stream.as_raw_socket() as usize);
         match SocketHandle::new(raw_socket) {
             Ok(handle) => Ok(TcpSocketStream {
@@ -60,26 +60,26 @@ impl TcpSocketStream {
     }
 }
 
-fn create(vpn_server_route_manager: &VpnServerRouteManager, remote_socket_address: SocketAddr) -> io::Result<(TcpStream, SocketInterface, VpnServerRouteGuard)> {
+fn create(network_observer: &NetworkObserver, vpn_server_route_manager: &VpnServerRouteManager, remote_socket_address: SocketAddr) -> io::Result<(TcpStream, SocketInterface, VpnServerRouteGuard)> {
     match remote_socket_address {
         SocketAddr::V4(ipv4_addr) => {
-            if let Some(ipv4_interface) = get_ipv4_internet_interface(&InterfaceFinderLogMode::create_verbose("TCP IPv4 socket creator")) {
+            if let Some(ipv4_interface) = network_observer.get_ipv4_internet_interface() {
                 let interface: SocketInterface = SocketInterface::new_ipv4(&ipv4_interface);
                 let stream: TcpStream = create_stream(Domain::IPV4, &interface, remote_socket_address)?;
                 let route: VpnServerRouteGuard = vpn_server_route_manager.create_ipv4(*ipv4_addr.ip(), ipv4_interface)?;
                 Ok((stream, interface, route))
             } else {
-                return Err(Error::new(ErrorKind::AddrNotAvailable, "Can't find an IPv4 internet interface"));
+                return Err(Error::new(ErrorKind::NetworkUnreachable, "Can't find an IPv4 internet interface"));
             }
         },
         SocketAddr::V6(ipv6_addr) => {
-            if let Some(ipv6_interface) = get_ipv6_internet_interface(&InterfaceFinderLogMode::create_verbose("TCP IPv6 socket creator")) {
+            if let Some(ipv6_interface) = network_observer.get_ipv6_internet_interface() {
                 let interface: SocketInterface = SocketInterface::new_ipv6(&ipv6_interface);
                 let stream: TcpStream = create_stream(Domain::IPV6, &interface, remote_socket_address)?;
                 let route: VpnServerRouteGuard = vpn_server_route_manager.create_ipv6(*ipv6_addr.ip(), ipv6_interface)?;
                 Ok((stream, interface, route))
             } else {
-                return Err(Error::new(ErrorKind::AddrNotAvailable, "Can't find an IPv6 internet interface"));
+                return Err(Error::new(ErrorKind::NetworkUnreachable, "Can't find an IPv6 internet interface"));
             }
         }
     }

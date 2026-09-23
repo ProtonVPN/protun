@@ -142,7 +142,6 @@ impl Drop for VpnServerRoute {
 }
 
 pub(crate) fn delete_all_stored_routes() {
-    log::info!("Deleting stored routes of internet interface");
     delete_stored_routes();
 }
 
@@ -244,6 +243,10 @@ fn handle_stored_route(route: &Route) {
 
 fn delete_stored_routes() {
     let stored_routes: Vec<String> = get_stored_routes();
+    if stored_routes.is_empty() {
+        return;
+    }
+
     log::info!("Deleting {} stored routes of internet interface", stored_routes.len());
     let mut routes_to_reinsert: Vec<String> = vec![];
     for stored_route in stored_routes {

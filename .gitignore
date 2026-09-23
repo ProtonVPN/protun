@@ -9,3 +9,5 @@ out/
 csharp_uniffi_output
 config.ini
 Cargo.lock
+/libpvpnclient
+/local-agent-rs

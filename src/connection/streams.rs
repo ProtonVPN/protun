@@ -38,6 +38,9 @@ pub(crate) trait Stream {
 
 /// Manages and polls a set of streams for libpvpnclient.
 pub(crate) trait Streams {
+    /// Returns the stream IDs of all opened sockets, excluding TUN and fixed streams such as PCAP
+    fn get_socket_stream_ids(&self) -> Vec<StreamId>;
+
     fn get_stream(&mut self, id: StreamId) -> Option<&mut dyn Stream>;
     fn open_new_tcp_stream(&mut self, id: StreamId, addr: SocketAddr) -> io::Result<()>;
     fn open_new_udp_stream(&mut self, id: StreamId, addr: SocketAddr) -> io::Result<()>;
@@ -55,6 +58,11 @@ pub(crate) trait Streams {
     fn update_tun(&mut self, tun_info: TunStreamInfo) -> io::Result<()>;
 
     fn get_tun_interface_state(&self, last_interface_error: Option<InterfaceError>) -> InterfaceState;
+}
+
+/// IDs of all socket streams: every opened stream except the TUN stream, PCAP stream, etc.
+pub(crate) fn extract_socket_stream_ids(stream_ids: impl Iterator<Item = StreamId>) -> Vec<StreamId> {
+    stream_ids.filter(|id| *id > StreamId::TUN_STREAM_ID).collect()
 }
 
 /// A trait to interrupt a [Streams::poll] call.

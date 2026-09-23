@@ -22,7 +22,7 @@ use crate::utils::windows::luid::Luid;
 
 #[derive(Debug)]
 pub enum NetworkObserverEvent {
-    InterfaceSelected(Option<NetworkInterface>),
+    InterfacesInUseChanged(Vec<NetworkInterface>),
     RoutingTableChanged(EventParameters),
     InterfaceChanged(EventParameters),
     IpAddressChanged(EventParameters),
@@ -31,9 +31,18 @@ pub enum NetworkObserverEvent {
 impl Display for NetworkObserverEvent {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         match self {
-            NetworkObserverEvent::InterfaceSelected(interface) => match interface {
-                Some(interface) => write!(f, "Interface selected. LUID: {}, Index: {} (IP: {})", interface.luid, interface.index, interface.ip_addr),
-                None => write!(f, "No interface selected."),
+            NetworkObserverEvent::InterfacesInUseChanged(interfaces) => {
+                if interfaces.is_empty() {
+                    write!(f, "No interfaces in use.")
+                }
+                else {
+                    let s = interfaces
+                        .iter()
+                        .map(|i| format!("LUID: {}, Index: {} (IP: {})", i.luid, i.index, i.ip_addr))
+                        .collect::<Vec<_>>()
+                        .join(", ");
+                    write!(f, "Interfaces in use: {}", s)
+                }
             },
             NetworkObserverEvent::RoutingTableChanged(event_parameters) => write!(f, "Routing table entry {event_parameters}"),
             NetworkObserverEvent::InterfaceChanged(event_parameters) => write!(f, "Network interface {event_parameters}"),

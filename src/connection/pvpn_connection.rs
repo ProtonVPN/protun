@@ -459,6 +459,12 @@ impl PvpnConnection {
     }
 
     fn handle_open(&mut self, stream_id: StreamId, open_stream: &OpenStream) {
+        if !self.network_recovery_handler.is_network_available() {
+            log::info!("no network available, returning NetworkUnreachable for stream {:?}", stream_id);
+            self.client.push_error(stream_id, ErrorKind::NetworkUnreachable);
+            return;
+        }
+
         let is_udp = open_stream.kind() == VpnStreamKind::Udp;
         log::info!("opening {} socket id={:?}: {}",
             if is_udp { "udp" } else { "tcp" }, stream_id, open_stream.addr());
@@ -585,6 +591,17 @@ impl PvpnConnection {
             self.client.notify_network_change();
         } else {
             self.client.notify_network_down();
+
+            let stream_ids: Vec<StreamId> = self.streams.get_socket_stream_ids();
+            if stream_ids.is_empty() {
+                log::warn!("The network is down, but there is no open stream to pass the error NetworkUnreachable"); // libpvpnclient won't know the network is down until it tries to create a stream
+            } else {
+                log::info!("The network is down, pushing the error NetworkUnreachable to {} open stream(s)", stream_ids.len());
+            }
+            for stream_id in stream_ids {
+                self.client.push_error(stream_id, ErrorKind::NetworkUnreachable); // Switch to ErrorKind::NetworkDown when pvpnclient supports it
+            }
+
             self.set_state(network_unavailable_state(tunnel_info));
         }
     }

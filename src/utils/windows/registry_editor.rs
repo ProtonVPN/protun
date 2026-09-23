@@ -37,7 +37,7 @@ pub fn disable_wintun_interface_netbios() {
     };
 
     match subkey.set_value("NetbiosOptions", &2u32) { // 2 = Disabled
-        Ok(_) => log::info!("Disabled NetBIOS over TCP/IP on the ProTUN adapter"),
+        Ok(_) => log::debug!("Disabled NetBIOS over TCP/IP on the ProTUN adapter"),
         Err(err) => log::error!("Failed to disable Netbios. Error: {err}"),
     }
 }
@@ -77,7 +77,7 @@ fn get_profiles_path() -> PathBuf {
 }
 
 pub fn get_stored_routes() -> Vec<String> {
-    log::info!("Fetching stored routes from registry");
+    log::debug!("Fetching stored routes from registry");
 
     let path: PathBuf = get_protun_path();
     let protun_subkey: RegKey = match RegKey::predef(HKEY_LOCAL_MACHINE).open_subkey_with_flags(&path, KEY_READ) {
@@ -110,7 +110,12 @@ fn get_protun_path() -> PathBuf {
 
 pub fn set_stored_routes(routes: Vec<String>) {
     let routes: Vec<String> = routes.iter().filter(|s| s.len() > 0).cloned().collect::<Vec<String>>().distinct();
-    log::info!("Writing {} non-empty stored routes to registry:", routes.len());
+
+    if routes.is_empty() {
+        log::debug!("Deleting stored routes from registry");
+    } else {
+        log::debug!("Writing {} stored routes to registry", routes.len());
+    }
 
     let path: PathBuf = get_protun_path();
     let protun_subkey: RegKey = match RegKey::predef(HKEY_LOCAL_MACHINE).create_subkey_with_flags(&path, KEY_ALL_ACCESS) {
@@ -119,7 +124,13 @@ pub fn set_stored_routes(routes: Vec<String>) {
     };
 
     match protun_subkey.set_value("RoutingTable", &routes) {
-        Ok(_) => log::info!("Successfully wrote {} routes to registry", routes.len()),
-        Err(err) => log::error!("Could not write routes in the registry. Error: {}", err),
+        Ok(_) => {
+            if routes.is_empty() {
+                log::info!("Successfully deleted routes from registry")
+            } else {
+                log::info!("Successfully wrote {} routes to registry", routes.len())
+            }
+        },
+        Err(err) => log::error!("Could not write {} routes in the registry. Error: {}", routes.len(), err),
     }
 }

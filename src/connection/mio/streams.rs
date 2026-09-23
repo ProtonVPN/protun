@@ -16,7 +16,7 @@
 // along with ProtonVPN.  If not, see <https://www.gnu.org/licenses/>.
 
 use std::{io, net::SocketAddr};
-use crate::connection::{streams::{PollResult, PollWaker, Stream, Streams}};
+use crate::connection::{streams::{extract_socket_stream_ids, PollResult, PollWaker, Stream, Streams}};
 use crate::connection::mio::poll_timer::SuspendInclusivePollTimer;
 use mio::{event, Events, Poll, Token, Waker};
 use pvpnclient::{Deadline, StreamId};
@@ -191,6 +191,10 @@ impl Streams for MioStreams {
         } else {
             InterfaceState::Down { last_error: last_interface_error }
         }
+    }
+
+    fn get_socket_stream_ids(&self) -> Vec<StreamId> {
+        extract_socket_stream_ids(self.streams.iter().map(|s| s.stream_id))
     }
 }
 

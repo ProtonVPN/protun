@@ -31,6 +31,45 @@ use crate::utils::windows::luid::Luid;
 struct InterfaceLuid(u64);
 
 #[derive(Clone)]
+pub(crate) struct InternetInterfaces {
+    pub(crate) v4: Option<Ipv4InternetInterface>,
+    pub(crate) v6: Option<Ipv6InternetInterface>
+}
+
+impl InternetInterfaces {
+    pub fn new() -> InternetInterfaces {
+        InternetInterfaces { v4: None, v6: None }
+    }
+
+    pub fn is_up(&self) -> bool {
+        self.v4.is_some() || self.v6.is_some()
+    }
+
+    pub fn is_down(&self) -> bool {
+        self.v4.is_none() && self.v6.is_none()
+    }
+
+    pub fn get_state_as_string(&self) -> String {
+        if self.is_up() { "up" } else { "down" }.to_string()
+    }
+}
+
+impl Display for InternetInterfaces {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        let v4_interface_string: String = match &self.v4 {
+            Some(v4) => format!("{v4}"),
+            None => "None".to_string(),
+        };
+        let v6_interface_string: String = match &self.v6 {
+            Some(v6) => format!("{v6}"),
+            None => "None".to_string(),
+        };
+
+        write!(f, "(IPv4: {v4_interface_string}, IPv6: {v6_interface_string})")
+    }
+}
+
+#[derive(Clone)]
 pub(crate) enum InternetInterface {
     V4(Ipv4InternetInterface),
     V6(Ipv6InternetInterface),
@@ -106,15 +145,7 @@ impl InterfaceFinderLogMode {
     }
 }
 
-pub(crate) fn get_ipv4_internet_interface(log_mode: &InterfaceFinderLogMode) -> Option<Ipv4InternetInterface> {
-    get_internet_interfaces(log_mode).0
-}
-
-pub(crate) fn get_ipv6_internet_interface(log_mode: &InterfaceFinderLogMode) -> Option<Ipv6InternetInterface> {
-    get_internet_interfaces(log_mode).1
-}
-
-pub(crate) fn get_internet_interfaces(log_mode: &InterfaceFinderLogMode) -> (Option<Ipv4InternetInterface>, Option<Ipv6InternetInterface>) {
+pub(crate) fn get_internet_interfaces(log_mode: &InterfaceFinderLogMode) -> InternetInterfaces {
     match get_potential_internet_interfaces(log_mode) {
         Some(interfaces) => {
             let (ipv4_result, ipv6_result) = (
@@ -126,9 +157,9 @@ pub(crate) fn get_internet_interfaces(log_mode: &InterfaceFinderLogMode) -> (Opt
                 }).cloned()
             ); 
             
-            (ipv4_result, ipv6_result)
+            InternetInterfaces { v4: ipv4_result, v6: ipv6_result }
         },
-        None => (None, None),
+        None => InternetInterfaces::new(),
     }
 }
 

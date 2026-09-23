@@ -193,13 +193,12 @@ impl Drop for WindowsConnection {
 }
 
 fn delete_all_stored_routes() {
-    log::info!("Deleting all stored routes");
     routes::delete_all_stored_routes();
 }
 
 fn create_pvpn_dependencies(
     waker: Box<WindowsPollWaker>,
-    config: InitialConnectionConfig,
+    mut config: InitialConnectionConfig,
     udp_socket_config: SocketConfig,
     tun: Arc<WinTunSession>,
     state_change_callback: Box<dyn StateChangedCallback>,
@@ -209,7 +208,12 @@ fn create_pvpn_dependencies(
 ) -> Result<PvpnDependencies, io::Error> {
     let tun_stream: Box<TunStreamWindows> = Box::new(TunStreamWindows::new(tun)
         .map_err(|e| Error::new(ErrorKind::Other, format!("Failed to create streams: {e}")))?);
-    let streams: Box<dyn Streams> = Box::new(WindowsStreams::new(tun_stream, waker, udp_socket_config, send_pvpn_message));
+    let windows_streams: WindowsStreams = WindowsStreams::new(tun_stream, waker, udp_socket_config, send_pvpn_message);
+
+    // The network observer determines the true initial network state at construction, not the caller
+    config.network_available = windows_streams.is_network_available();
+
+    let streams: Box<dyn Streams> = Box::new(windows_streams);
 
     let monotonic_factory = ClientMonotonicFactory::new();
     let realtime_factory = ClientRealtimeFactory::new();

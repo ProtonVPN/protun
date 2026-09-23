@@ -23,19 +23,39 @@ use winresource::{VersionInfo, WindowsResource};
 
 pub fn set_dll_properties() {
     // Produces something like "v0.1-31-gc364e3f0" or "0.1-31-gc364e3f0"
-    let output = Command::new("git")
+    let describe: String = match Command::new("git")
         .args(["describe", "--tags", "--long", "--always", "--abbrev=8"])
         .output()
-        .expect("Failed to run git describe");
-    let describe: String = String::from_utf8_lossy(&output.stdout).trim().to_string();
+    {
+        Ok(output) if output.status.success() => {
+            String::from_utf8_lossy(&output.stdout).trim().to_string()
+        }
+        Ok(output) => {
+            // git ran but failed (no repo, dubious ownership, no commits, ...).
+            // Fall back to a default version instead of aborting the build.
+            println!(
+                "cargo:warning=git describe failed ({}): {}",
+                output.status,
+                String::from_utf8_lossy(&output.stderr).trim()
+            );
+            String::new()
+        }
+        Err(err) => {
+            println!("cargo:warning=failed to run git describe: {err}");
+            String::new()
+        }
+    };
     println!("Git describe output: {describe}");
 
-    // Parse "v0.1-31-gc364e3f0" into (tag, commits_since, hash)
-    // Split from the right since the tag itself could contain dashes
+    // Parse "v0.1-31-gc364e3f0" into (tag, commits_since, hash).
+    // Split from the right since the tag itself could contain dashes.
+    // Tolerate partial output: `--always` with no tags yields just a hash
+    // ("c364e3f0"), and a git failure above yields an empty string; in both
+    // cases the missing components fall back to their defaults below.
     let mut parts: RSplitN<'_, char> = describe.rsplitn(3, '-');
-    let hash_raw: &str = parts.next().expect("ERROR! Missing hash");       // "gc364e3f0"
-    let count_str: &str = parts.next().expect("ERROR! Missing count");     // "31"
-    let tag_raw: &str = parts.next().expect("ERROR! Missing tag");         // "v0.1"
+    let hash_raw: &str = parts.next().unwrap_or("");       // "gc364e3f0"
+    let count_str: &str = parts.next().unwrap_or("");      // "31"
+    let tag_raw: &str = parts.next().unwrap_or("");        // "v0.1"
 
     // Strip leading 'v' from tag and 'g' from hash
     let tag: &str = tag_raw.trim_start_matches('v');
