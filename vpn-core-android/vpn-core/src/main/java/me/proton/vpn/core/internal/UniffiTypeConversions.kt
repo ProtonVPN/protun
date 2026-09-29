@@ -53,7 +53,7 @@ import uniffi.protun.DisconnectReason
 import uniffi.protun.ErrorEvent
 import uniffi.protun.Event
 import uniffi.protun.FileWriteMode
-import uniffi.protun.MuonEnv
+import me.proton.vpn.core.api.MuonEnv
 import uniffi.protun.CertificateDuration
 import uniffi.protun.PcapFile
 import uniffi.protun.PcapFileInfo
@@ -223,6 +223,12 @@ fun ConnectionMode.toUniFFI(): uniffi.protun.ConnectionMode = when (this) {
             muonEnv.toUniFFI(),
             certificateDurationMinutes?.let { CertificateDuration.Minutes(it) }
         )
+}
+
+fun MuonEnv.toUniFFI(): uniffi.protun.MuonEnv = when (this) {
+    MuonEnv.Prod -> uniffi.protun.MuonEnv.Prod
+    is MuonEnv.Atlas -> uniffi.protun.MuonEnv.Atlas(scientist)
+    is MuonEnv.CustomServers -> uniffi.protun.MuonEnv.CustomServers(servers, apiPins, arPins)
 }
 
 fun SniStrategy.toUniFFI(): uniffi.protun.SniStrategy = when (this) {

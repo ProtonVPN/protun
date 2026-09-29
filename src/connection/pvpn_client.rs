@@ -33,31 +33,7 @@ use crate::connection::util::{error_kind_to_socket_err};
 #[cfg(feature = "local-agent")]
 use pvpnclient::{CertificateApiDuration, Ed25519PrivateKey, LocalAgentAction, LocalAgentCertificate, LocalAgentMessage, MuonAuth};
 #[cfg(feature = "local-agent")]
-use muon::Environment;
-#[cfg(feature = "local-agent")]
 use crate::api::connection::MuonEnv;
-
-#[cfg(feature = "local-agent")]
-struct CustomEnv {
-    servers: Vec<muon::common::Server>,
-    ar_pins: Option<muon::tls::pins::TlsPinSet>,
-    api_pins: Option<muon::tls::pins::TlsPinSet>,
-}
-
-#[cfg(feature = "local-agent")]
-impl muon::env::Env for CustomEnv {
-    fn servers(&self, _: &muon::app::AppVersion) -> Vec<muon::common::Server> {
-        self.servers.clone()
-    }
-
-    fn ar_pins(&self) -> Option<&muon::tls::pins::TlsPinSet> {
-        self.ar_pins.as_ref()
-    }
-
-    fn api_pins(&self) -> Option<&muon::tls::pins::TlsPinSet> {
-        self.api_pins.as_ref()
-    }
-}
 
 /// Abstraction over [pvpnclient::pvpnclient::Client]
 pub trait PvpnClient {
@@ -136,33 +112,7 @@ impl <'a> PvpnClientImpl<'a> {
                 muon_env,
                 certificate_duration,
             } => {
-                use muon::common::Server;
-                use muon::env::Env as _;
-                use std::str::FromStr as _;
-                let env = match muon_env {
-                    MuonEnv::Prod => {
-                        let prod = muon::env::Prod::default();
-                        Environment::new_custom(CustomEnv {
-                            servers: vec![Server::from_str("https://vpn-api.proton.me/").unwrap()],
-                            ar_pins: prod.ar_pins().cloned(),
-                            api_pins: prod.api_pins().cloned(),
-                        })
-                    }
-                    MuonEnv::CustomServers { servers } => {
-                        let prod = muon::env::Prod::default();
-                        Environment::new_custom(CustomEnv {
-                            servers: servers.iter()
-                                .filter_map(|s| Server::from_str(s)
-                                    .map_err(|e| log::warn!("invalid server url {s}: {e}"))
-                                    .ok())
-                                .collect(),
-                            ar_pins: prod.ar_pins().cloned(),
-                            api_pins: prod.api_pins().cloned(),
-                        })
-                    }
-                    MuonEnv::Atlas { scientist: Some(name) } => Environment::new_atlas_name(name),
-                    MuonEnv::Atlas { scientist: None } => Environment::new_atlas(),
-                };
+                let env = muon::Environment::try_from(&muon_env)?;
                 let muon_app = muon::App::new(app_version)
                     .map_err(|e| io::Error::new(ErrorKind::Other, e))?
                     .with_user_agent(user_agent);

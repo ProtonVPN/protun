@@ -24,62 +24,13 @@ use muon::rt::{
     Monotonic, MuonSystemTime, OperatingSystem, Resolve, SinceUnixEpoch as _, SystemTimeFactory,
     TcpConnect,
 };
-use muon::env::Env as _;
 use muon::{App, Environment};
 use pvpnclient::cookie_store;
 use pvpnclient::url::Url;
 use pvpnclient::util::fork_muon_session;
 use std::future::Future;
 use std::pin::Pin;
-use std::str::FromStr as _;
 use std::sync::{Arc, RwLock};
-
-struct VpnApiEnv {
-    servers: Vec<muon::common::Server>,
-    ar_pins: Option<muon::tls::pins::TlsPinSet>,
-    api_pins: Option<muon::tls::pins::TlsPinSet>,
-}
-
-impl muon::env::Env for VpnApiEnv {
-    fn servers(&self, _: &muon::app::AppVersion) -> Vec<muon::common::Server> {
-        self.servers.clone()
-    }
-
-    fn ar_pins(&self) -> Option<&muon::tls::pins::TlsPinSet> {
-        self.ar_pins.as_ref()
-    }
-
-    fn api_pins(&self) -> Option<&muon::tls::pins::TlsPinSet> {
-        self.api_pins.as_ref()
-    }
-}
-
-fn build_muon_environment(muon_env: &MuonEnv) -> Environment {
-    match muon_env {
-        MuonEnv::Prod => {
-            let prod = muon::env::Prod::default();
-            Environment::new_custom(VpnApiEnv {
-                servers: vec![muon::common::Server::from_str("https://vpn-api.proton.me/").unwrap()],
-                ar_pins: prod.ar_pins().cloned(),
-                api_pins: prod.api_pins().cloned(),
-            })
-        }
-        MuonEnv::CustomServers { servers } => {
-            let prod = muon::env::Prod::default();
-            Environment::new_custom(VpnApiEnv {
-                servers: servers.iter()
-                    .filter_map(|s| muon::common::Server::from_str(s)
-                        .map_err(|e| log::warn!("invalid server url {s}: {e}"))
-                        .ok())
-                    .collect(),
-                ar_pins: prod.ar_pins().cloned(),
-                api_pins: prod.api_pins().cloned(),
-            })
-        }
-        MuonEnv::Atlas { scientist: Some(name) } => Environment::new_atlas_name(name.clone()),
-        MuonEnv::Atlas { scientist: None } => Environment::new_atlas(),
-    }
-}
 
 #[derive(Debug, Clone)]
 pub struct TimeCapability {
@@ -244,7 +195,7 @@ pub async fn get_session_fork_selector_async(
     muon_env: MuonEnv,
 ) -> ForkSelectorInfo {
     let app = App::new(app).expect("valid app version");
-    let env = build_muon_environment(&muon_env);
+    let env = Environment::try_from(&muon_env).expect("valid muon env");
     let muon_cookies = Arc::new(RwLock::new(Vec::new()));
     let cookie_store = MuonCookieStore::new(muon_cookies.clone());
     let session = muon::Client::builder(app.clone(), env)

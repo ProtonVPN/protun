@@ -261,7 +261,15 @@ pub enum MuonEnv {
     /// Atlas test environment.
     Atlas { scientist: Option<String> },
     /// Custom server URLs.
-    CustomServers { servers: Vec<String> },
+    CustomServers {
+        servers: Vec<String>,
+
+        // base64-encoded SHA-256 hashes of a certificate's Subject Public Key Info (SPKI).
+        #[cfg_attr(feature = "uniffi", uniffi(default = None))]
+        api_pins: Option<Vec<String>>, // main route
+        #[cfg_attr(feature = "uniffi", uniffi(default = None))]
+        ar_pins: Option<Vec<String>>, // alternative routing
+    },
 }
 
 #[cfg_attr(feature = "uniffi", derive(uniffi::Enum))]

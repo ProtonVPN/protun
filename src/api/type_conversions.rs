@@ -33,6 +33,10 @@ use crate::api::local_agent::{LocalAgentSettings, NetshieldLevel, Restriction};
 use pvpnclient::{CertificateApiDuration, Ed25519PrivateKey, LocalAgentCertificate, MuonAuth, SessionSettings};
 #[cfg(feature = "local-agent")]
 use pvpnclient::cookie_store::RawCookie;
+#[cfg(feature = "local-agent")]
+use crate::api::connection::MuonEnv;
+#[cfg(feature = "local-agent")]
+use muon::tls::pins::TlsPinSet;
 
 #[cfg(feature = "uniffi")]
 uniffi::custom_type!(WgClientPrivateKey, Vec<u8>);
@@ -286,5 +290,154 @@ impl From<&Cookie> for RawCookie<'_> {
 impl From<Cookies> for MuonCookies {
     fn from(value: Cookies) -> Self {
         value.items.iter().map(Into::into).collect()
+    }
+}
+
+#[cfg(feature = "local-agent")]
+struct CustomEnv {
+    servers: Vec<muon::common::Server>,
+    ar_pins: Option<TlsPinSet>,
+    api_pins: Option<TlsPinSet>,
+}
+
+#[cfg(feature = "local-agent")]
+impl muon::env::Env for CustomEnv {
+    fn servers(&self, _: &muon::app::AppVersion) -> Vec<muon::common::Server> {
+        self.servers.clone()
+    }
+
+    fn ar_pins(&self) -> Option<&TlsPinSet> {
+        self.ar_pins.as_ref()
+    }
+
+    fn api_pins(&self) -> Option<&TlsPinSet> {
+        self.api_pins.as_ref()
+    }
+}
+
+#[cfg(feature = "local-agent")]
+fn invalid_input<E: std::fmt::Debug>(context: impl std::fmt::Display) -> impl FnOnce(E) -> io::Error {
+    move |e| io::Error::new(io::ErrorKind::InvalidInput, format!("{context}: {e:?}"))
+}
+
+#[cfg(feature = "local-agent")]
+impl TryFrom<&MuonEnv> for muon::Environment {
+    type Error = io::Error;
+
+    fn try_from(value: &MuonEnv) -> Result<Self, Self::Error> {
+        use muon::common::Server;
+        use muon::env::Env as _;
+        use muon::Environment;
+        Ok(match value {
+            MuonEnv::Prod => {
+                let prod = muon::env::Prod::default();
+                Environment::new_custom(CustomEnv {
+                    servers: vec![
+                        Server::from_str("https://vpn-api.proton.me/").map_err(invalid_input("invalid server url"))?
+                    ],
+                    ar_pins: prod.ar_pins().cloned(),
+                    api_pins: prod.api_pins().cloned(),
+                })
+            }
+            MuonEnv::CustomServers { servers, api_pins, ar_pins } => {
+                let prod = muon::env::Prod::default();
+                let parse_pins = |pins: &Option<Vec<String>>, default: Option<&TlsPinSet>| match pins {
+                    Some(pins) => TlsPinSet::from_b64(pins)
+                        .map(Some)
+                        .map_err(invalid_input("invalid TLS pins")),
+                    None => Ok(default.cloned()),
+                };
+                let servers = servers.iter()
+                    .map(|s| Server::from_str(s).map_err(invalid_input(format!("invalid server url {s}"))))
+                    .collect::<Result<Vec<_>, _>>()?;
+                if servers.is_empty() {
+                    return Err(io::Error::new(io::ErrorKind::InvalidInput, "no servers provided"));
+                }
+                Environment::new_custom(CustomEnv {
+                    servers,
+                    ar_pins: parse_pins(ar_pins, prod.ar_pins())?,
+                    api_pins: parse_pins(api_pins, prod.api_pins())?,
+                })
+            }
+            MuonEnv::Atlas { scientist: Some(name) } => Environment::new_atlas_name(name.clone()),
+            MuonEnv::Atlas { scientist: None } => Environment::new_atlas(),
+        })
+    }
+}
+
+#[cfg(all(test, feature = "local-agent"))]
+mod muon_env_tests {
+    use super::*;
+    use muon::env::Env as _;
+
+    // base64 of 32 zero bytes
+    const VALID_PIN: &str = "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=";
+
+    fn custom(servers: &[&str], api_pins: Option<&[&str]>, ar_pins: Option<&[&str]>) -> MuonEnv {
+        let to_vec = |v: &[&str]| v.iter().map(|s| s.to_string()).collect();
+        MuonEnv::CustomServers {
+            servers: to_vec(servers),
+            api_pins: api_pins.map(to_vec),
+            ar_pins: ar_pins.map(to_vec),
+        }
+    }
+
+    fn pins(pins: Option<&TlsPinSet>) -> Option<std::collections::HashSet<muon::tls::pins::TlsPin>> {
+        pins.map(|p| p.into_iter().copied().collect())
+    }
+
+    fn assert_invalid_input(env: MuonEnv) {
+        let err = muon::Environment::try_from(&env).err().expect("conversion should fail");
+        assert_eq!(err.kind(), io::ErrorKind::InvalidInput);
+    }
+
+    #[test]
+    fn prod_env_converts() {
+        let env = muon::Environment::try_from(&MuonEnv::Prod).unwrap();
+        assert!(env.api_pins().is_some());
+        assert!(env.ar_pins().is_some());
+    }
+
+    #[test]
+    fn atlas_env_converts() {
+        assert!(muon::Environment::try_from(&MuonEnv::Atlas { scientist: None }).is_ok());
+        assert!(muon::Environment::try_from(&MuonEnv::Atlas { scientist: Some("name".into()) }).is_ok());
+    }
+
+    #[test]
+    fn custom_servers_default_to_prod_pins() {
+        let prod = muon::env::Prod::default();
+        let env = muon::Environment::try_from(&custom(&["https://example.com/"], None, None)).unwrap();
+        assert_eq!(pins(env.api_pins()), pins(prod.api_pins()));
+        assert_eq!(pins(env.ar_pins()), pins(prod.ar_pins()));
+    }
+
+    #[test]
+    fn custom_servers_with_custom_pins() {
+        let env = custom(&["https://example.com/"], Some(&[VALID_PIN]), Some(&[VALID_PIN]));
+        let env = muon::Environment::try_from(&env).unwrap();
+        let expected = TlsPinSet::from_b64([VALID_PIN]).unwrap();
+        assert_eq!(pins(env.api_pins()), pins(Some(&expected)));
+        assert_eq!(pins(env.ar_pins()), pins(Some(&expected)));
+    }
+
+    #[test]
+    fn invalid_server_url_fails() {
+        assert_invalid_input(custom(&["https://example.com/", "not a url"], None, None));
+    }
+
+    #[test]
+    fn empty_servers_fail() {
+        assert_invalid_input(custom(&[], None, None));
+    }
+
+    #[test]
+    fn invalid_api_pin_fails() {
+        assert_invalid_input(custom(&["https://example.com/"], Some(&["not base64!"]), None));
+    }
+
+    #[test]
+    fn invalid_ar_pin_fails() {
+        assert_invalid_input(custom(&["https://example.com/"], None, Some(&[VALID_PIN, "AAAA"])));
     }
 }

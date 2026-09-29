@@ -142,7 +142,27 @@ sealed interface ConnectionMode: Parcelable {
         val appVersion: String,
         val settings: LocalAgentSettings,
         val certificateDurationMinutes: UInt? = null, // null means "use default"
+        val muonEnv: MuonEnv = MuonEnv.Prod,
     ) : ConnectionMode
+}
+
+/**
+ * Proton API environment
+ */
+sealed interface MuonEnv : Parcelable {
+
+    @Parcelize data object Prod : MuonEnv
+    @Parcelize data class Atlas(val scientist: String?) : MuonEnv
+
+    /**
+     * Custom server URLs and pins. Pins are base64-encoded SHA-256 hashes of a certificate's Subject Public
+     * Key Info (SPKI). null means "use production pins".
+     */
+    @Parcelize data class CustomServers(
+        val servers: List<String>,
+        val apiPins: List<String>? = null, // main route
+        val arPins: List<String>? = null, // alternative routing
+    ) : MuonEnv
 }
 
 /**
