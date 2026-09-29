@@ -242,7 +242,7 @@ internal class ProtonVpnConnectionManagerImpl(
         if (VpnService.prepare(context) == null) {
             ContextCompat.startForegroundService(context, ProTunVpnService.actionIntent(context, vpnAction))
         } else {
-            setState(VpnState.disconnectedWith(VpnDisconnectError.ServiceError("Missing VPN permission")))
+            setState(VpnState.disconnectedWith(VpnDisconnectError.VpnPermissionMissing))
         }
     }
 
