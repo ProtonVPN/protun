@@ -76,6 +76,7 @@ data class VpnConfig(
                     userId = "id:$username",
                     userAgent = "ProtonVPN/5.17.62.8 (Android 14; google sdk_gphone64_x86_64)",
                     appVersion = "android-vpn@5.17.62.0",
+                    certificateDurationMinutes = null,
                     settings = LocalAgentSettings(
                         splitTcp = true,
                         netshieldLevel = NetShieldLevel.AdsAndMalwareFilter,

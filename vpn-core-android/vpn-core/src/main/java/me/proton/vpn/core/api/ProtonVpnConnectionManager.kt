@@ -141,6 +141,7 @@ sealed interface ConnectionMode: Parcelable {
         val userAgent: String,
         val appVersion: String,
         val settings: LocalAgentSettings,
+        val certificateDurationMinutes: UInt? = null, // null means "use default"
     ) : ConnectionMode
 }
 

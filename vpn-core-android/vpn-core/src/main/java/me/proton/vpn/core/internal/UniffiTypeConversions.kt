@@ -54,6 +54,7 @@ import uniffi.protun.ErrorEvent
 import uniffi.protun.Event
 import uniffi.protun.FileWriteMode
 import uniffi.protun.MuonEnv
+import uniffi.protun.CertificateDuration
 import uniffi.protun.PcapFile
 import uniffi.protun.PcapFileInfo
 import uniffi.protun.PeerConnectionInfo
@@ -215,7 +216,13 @@ fun ConnectionMode.toUniFFI(): uniffi.protun.ConnectionMode = when (this) {
     is ConnectionMode.NoLocalAgent ->
         uniffi.protun.ConnectionMode.NoLocalAgent(clientX25519PrivateKeyBase64?.decodeBase64())
     is ConnectionMode.LocalAgent ->
-        uniffi.protun.ConnectionMode.LocalAgent(userAgent, appVersion, settings.toUniFFI(), MuonEnv.Prod)
+        uniffi.protun.ConnectionMode.LocalAgent(
+            userAgent,
+            appVersion,
+            settings.toUniFFI(),
+            muonEnv.toUniFFI(),
+            certificateDurationMinutes?.let { CertificateDuration.Minutes(it) }
+        )
 }
 
 fun SniStrategy.toUniFFI(): uniffi.protun.SniStrategy = when (this) {
