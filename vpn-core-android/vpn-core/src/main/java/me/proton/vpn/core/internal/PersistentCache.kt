@@ -56,46 +56,84 @@ internal class PersistentCacheStorage(
     context: Context,
 ) {
 
-    private val prefs = context.getSharedPreferences("vpn-core-prefs", Context.MODE_PRIVATE)
+    // Memory cache storing unencrypted data for devices with broken key store. When cipher fails
+    // to encrypt, data won't be persisted and memory cache will keep the data available for as long
+    // as the process is alive.
+    // Guarded by [lock], which also keeps the memory cache and prefs in sync when concurrent
+    // writers touch the same key. Cipher operations (potentially slow) are done outside the lock.
+    private val memoryCache = mutableMapOf<Pair<String, CacheKey>, ByteArray>()
+
+    private val lock = Any()
+
+    private val prefs = context.getSharedPreferences("vpn-core-cache", Context.MODE_PRIVATE)
 
     private fun getKey(key: CacheKey, userId: String) = "${key.name}:$userId"
 
     fun cacheFor(userId: String) = PersistentCacheImpl(userId, this)
 
-    fun put(key: CacheKey, userId: String, bytes: ByteArray) {
-        val data = cipher?.encrypt(bytes)?.getOrElse { e ->
-            logger.log(LogLevel.ERROR, "PersistentCache: encryption failed for $key: $e")
-            return
-        } ?: bytes
-        prefs.edit {
-            putString(getKey(key, userId), Base64.encodeToString(data, Base64.NO_WRAP))
+    fun put(key: CacheKey, userId: String, data: ByteArray) {
+        val storeData = if (cipher != null) {
+            cipher.encrypt(data).getOrElse { e ->
+                logger.log(LogLevel.ERROR, "PersistentCache: encryption failed for $key: $e")
+                null
+            }
+        } else {
+            data
+        }
+        synchronized(lock) {
+            memoryCache[userId to key] = data
+            prefs.edit {
+                if (storeData != null)
+                    putString(getKey(key, userId), Base64.encodeToString(storeData, Base64.NO_WRAP))
+                else
+                    remove(getKey(key, userId)) // encryption failed, remove old data, rely on mem cache
+            }
         }
     }
 
     fun get(key: CacheKey, userId: String): ByteArray? {
-        val stored = prefs.getString(getKey(key, userId), null)?.let {
-            Base64.decode(it, Base64.NO_WRAP)
+        val prefsKey = getKey(key, userId)
+        val stored64 = synchronized(lock) {
+            memoryCache[userId to key]?.let { return it }
+            prefs.getString(prefsKey, null)
         } ?: return null
 
-        return if (cipher != null) {
+        val stored = Base64.decode(stored64, Base64.NO_WRAP)
+        val value = if (cipher != null) {
             cipher.decrypt(stored).getOrElse { e ->
                 logger.log(LogLevel.ERROR, "PersistentCache: decryption failed for $key: $e")
-                null
+                return null
             }
         } else {
             stored
         }
+
+        synchronized(lock) {
+            val cached = memoryCache[userId to key]
+            // A concurrent put/remove might have happened while decrypting, prefer its result.
+            if (cached != null)
+                return cached
+            else if (prefs.getString(prefsKey, null) == stored64)
+                memoryCache[userId to key] = value
+        }
+        return value
     }
 
     fun clearAll(userId: String) {
-        prefs.edit {
-            CacheKey.entries.forEach { remove(getKey(it, userId)) }
+        synchronized(lock) {
+            memoryCache.keys.removeAll { it.first == userId }
+            prefs.edit {
+                CacheKey.entries.forEach { remove(getKey(it, userId)) }
+            }
         }
     }
 
     fun remove(key: CacheKey, userId: String) {
-        prefs.edit {
-            remove(getKey(key, userId))
+        synchronized(lock) {
+            memoryCache.remove(userId to key)
+            prefs.edit {
+                remove(getKey(key, userId))
+            }
         }
     }
 }
