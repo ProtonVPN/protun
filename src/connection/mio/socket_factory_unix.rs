@@ -26,14 +26,27 @@ use socket2::{Domain, Protocol, SockAddr, Socket, Type};
 use crate::connection::mio::streams::MioStream;
 use crate::connection::mio::tcp::TcpSocketStream;
 use crate::connection::mio::udp::UdpSocketStream;
-use crate::{api::connection_unix::OnSocketFdAvailableCallback, connection::mio::streams::MioSocketFactory};
+use crate::{api::connection_unix::SocketProtector, connection::mio::streams::MioSocketFactory};
 
 pub(crate) struct SocketFactoryUnix {
-    on_socket_fd_available_callback: Option<Box<dyn OnSocketFdAvailableCallback>>,
+    socket_protector: Option<Box<dyn SocketProtector>>,
 }
 impl SocketFactoryUnix {
-    pub(crate) fn new(on_socket_fd_available_callback: Option<Box<dyn OnSocketFdAvailableCallback>>) -> Self {
-        Self { on_socket_fd_available_callback }
+    pub(crate) fn new(socket_protector: Option<Box<dyn SocketProtector>>) -> Self {
+        Self { socket_protector }
+    }
+
+    /// Asks the host to protect `sock`, which must not be connected yet. A
+    /// socket the host could not protect fails with
+    /// [io::ErrorKind::NetworkUnreachable]. The connection treats that as a
+    /// missing network and will try the connection again after a delay or when
+    /// the network changes.
+    fn protect(&self, sock: &Socket) -> io::Result<()> {
+        match &self.socket_protector {
+            Some(protector) if !protector.protect_socket(sock.as_raw_fd()) =>
+                Err(io::Error::new(io::ErrorKind::NetworkUnreachable, "the host could not protect the socket")),
+            _ => Ok(()),
+        }
     }
 }
 
@@ -53,10 +66,7 @@ impl MioSocketFactory for SocketFactoryUnix {
         sock.set_tcp_nodelay(true)?;
         sock.set_send_buffer_size(TCP_SEND_BUFFER_SIZE)?;
         sock.set_recv_buffer_size(TCP_RECV_BUFFER_SIZE)?;
-        let fd = sock.as_raw_fd();
-        if let Some(callback) = &self.on_socket_fd_available_callback {
-            callback.on_socket_fd_available(fd);
-        }
+        self.protect(&sock)?;
         let connect_res = sock.connect(&SockAddr::from(addr));
         if let Err(e) = connect_res
             && !matches!(e.raw_os_error(), Some(code) if code == EINPROGRESS)
@@ -80,10 +90,7 @@ impl MioSocketFactory for SocketFactoryUnix {
         sock.set_send_buffer_size(UDP_SEND_BUFFER_SIZE)?;
         sock.set_recv_buffer_size(UDP_RECV_BUFFER_SIZE)?;
 
-        let fd = sock.as_raw_fd();
-        if let Some(callback) = &self.on_socket_fd_available_callback {
-            callback.on_socket_fd_available(fd);
-        }
+        self.protect(&sock)?;
         sock.bind(&SockAddr::from(bind_addr))?;
         sock.set_nonblocking(true)?;
         sock.connect(&SockAddr::from(addr))?;

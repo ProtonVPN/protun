@@ -51,7 +51,7 @@ import me.proton.vpn.core.internal.DependencyContainer
 import uniffi.protun.Event
 import uniffi.protun.EventCallback
 import uniffi.protun.LogLevel
-import uniffi.protun.OnSocketFdAvailableCallback
+import uniffi.protun.SocketProtector
 import java.lang.ref.WeakReference
 
 internal interface ProTunVpnServiceCallback {
@@ -322,11 +322,12 @@ internal class ProTunVpnServiceBinder(
 internal class ProTunSocketProtectCallback(
     val logger: Logger,
     val weakService: WeakReference<ProTunVpnService>
-): OnSocketFdAvailableCallback {
+): SocketProtector {
 
-    override fun onSocketFdAvailable(socketFd: Int) {
+    override fun protectSocket(socketFd: Int): Boolean {
         val success = weakService.get()?.protect(socketFd) == true
         logger.log(LogLevel.INFO, "ProTunVpnService protect socket($socketFd) success: $success")
+        return success
     }
 }
 

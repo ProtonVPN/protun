@@ -166,7 +166,7 @@ internal class ConnectionManager(
                     ),
                     tunFd = tunFd.detachFd(),
                     stateChangeCallback = stateChangeCallback,
-                    socketFdAvailableCallback = socketProtectCallback,
+                    socketProtector = socketProtectCallback,
                     eventCallback = eventCallback,
                     cache = userCache,
                 )

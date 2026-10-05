@@ -39,7 +39,7 @@ impl Connection {
         tun_fd: Option<i32>,
         state_change_callback: Box<dyn StateChangedCallback>,
         event_callback: Box<dyn EventCallback>,
-        socket_fd_available_callback: Option<Box<dyn OnSocketFdAvailableCallback>>,
+        socket_protector: Option<Box<dyn SocketProtector>>,
         cache: Box<dyn PersistentCache>,
     ) -> Self {
         let (poll, waker) = MioStreams::create_mio_poll_with_waker().expect("Failed to create mio poll");
@@ -51,7 +51,7 @@ impl Connection {
                     config,
                     tun_fd,
                     state_change_callback,
-                    socket_fd_available_callback,
+                    socket_protector,
                     event_callback,
                     cache,
                 )
@@ -71,20 +71,24 @@ impl Connection {
     }
 }
 
-/// Platform callback to notify that server connection socket file descriptor is available.
-/// Android uses it to protect server connection socket from being routed via tun device.
+/// Keeps socket connections to a VPN server from being routed through the VPN
+/// tunnel by mistake. ProTUN will ask the holder of the connection to "protect"
+/// each socket before the socket connects, typically by binding it to
+/// a physical network interface.
 #[cfg_attr(feature = "uniffi", uniffi::export(callback_interface))]
-pub trait OnSocketFdAvailableCallback: Send + Sync {
-    fn on_socket_fd_available(&self, socket_fd: i32);
+pub trait SocketProtector: Send + Sync {
+    /// Returns whether the socket has been "protected," i.e. bound to an
+    /// interface that is not the tunnel.
+    fn protect_socket(&self, socket_fd: i32) -> bool;
 }
 
-/// Blanket implementation to allow using closures as state change callbacks.
-impl<F> OnSocketFdAvailableCallback for F
+/// Simple wrapper for using closures with the `protect_socket` interface.
+impl<F> SocketProtector for F
 where
-    F: Send + Sync + Fn(i32) + 'static
+    F: Send + Sync + Fn(i32) -> bool + 'static
 {
-    fn on_socket_fd_available(&self, socket_fd: i32) {
-        self(socket_fd);
+    fn protect_socket(&self, socket_fd: i32) -> bool {
+        self(socket_fd)
     }
 }
 
@@ -93,12 +97,12 @@ fn create_pvpn_dependencies(
     config: InitialConnectionConfig,
     tun_fd: Option<i32>,
     state_change_callback: Box<dyn StateChangedCallback>,
-    socket_fd_available_callback: Option<Box<dyn OnSocketFdAvailableCallback>>,
+    socket_protector: Option<Box<dyn SocketProtector>>,
     event_callback: Box<dyn EventCallback>,
     cache: Box<dyn PersistentCache>,
 ) -> Result<PvpnDependencies, io::Error> {
     let socket_factory =
-        Box::new(SocketFactoryUnix::new(socket_fd_available_callback));
+        Box::new(SocketFactoryUnix::new(socket_protector));
 
     let tun_stream: Option<Box<dyn MioStream>> = if let Some(tun_fd) = tun_fd {
         Some(Box::new(TunStreamUnixType::new(tun_fd)))
