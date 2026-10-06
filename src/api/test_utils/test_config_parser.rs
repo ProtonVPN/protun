@@ -18,7 +18,7 @@
 use std::collections::HashMap;
 use base64::Engine;
 use ini::ini;
-use crate::api::connection::{ConnectionMode, InitialConnectionConfig, IpAddress, MuonEnv, PeerInfo, WgClientPrivateKey, WgPeerPublicKey, PEER_PUB_KEY_SIZE_BYTES, SniStrategy};
+use crate::api::connection::{ConnectionMode, FileWriteMode, InitialConnectionConfig, IpAddress, MuonEnv, PcapFile, PcapFileInfo, PeerInfo, WgClientPrivateKey, WgPeerPublicKey, PEER_PUB_KEY_SIZE_BYTES, SniStrategy};
 
 /// Example ini file format (for local agent mode):
 /// ```ini
@@ -116,10 +116,16 @@ pub fn parse_ini_config(path: String) -> Result<(ParsedConfig, Option<ParsedFork
 
     #[cfg(target_os = "linux")]
     let tun_interface_name = ini_config["mode"].get("tun_interface_name").cloned().flatten();
+
+    let pcap_file = ini_config["mode"].get("pcap_file").cloned().flatten().map(|path| PcapFileInfo {
+        file: PcapFile::Path { path, mode: FileWriteMode::Overwrite },
+        max_bytes: None,
+    });
+
     let initial_connection_config = InitialConnectionConfig {
         peers,
         network_available: true,
-        pcap_file: None,
+        pcap_file,
         connection_mode,
         sni_strategy: SniStrategy::Random,
     };
