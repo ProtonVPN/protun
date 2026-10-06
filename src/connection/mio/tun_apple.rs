@@ -20,7 +20,7 @@ use std::io::{self, Read, Write};
 use std::os::fd::{FromRawFd, RawFd};
 use mio::event;
 
-use crate::connection::mio::streams::{is_would_block, MioStream};
+use crate::connection::mio::streams::{FailedIo, MioStream};
 use crate::connection::mio::tun_source::TunSourceFd;
 use crate::connection::streams::{PendingWrite, Stream, StreamResult, WouldBlock};
 
@@ -66,7 +66,7 @@ impl MioStream for TunStreamApple {
 impl Stream for TunStreamApple {
     fn read(&mut self, buf: &mut[u8]) -> StreamResult {
         let rv = self.file.read(buf);
-        match rv {
+        match rv.map_err(FailedIo::on_tun) {
             Ok(bytes_read) if bytes_read >= APPLE_TUN_PACKET_HEADER_LEN => {
                 StreamResult::Ok {
                     bytes_count: bytes_read - APPLE_TUN_PACKET_HEADER_LEN,
@@ -81,11 +81,10 @@ impl Stream for TunStreamApple {
                     format!("Invalid packet: expected at least {} bytes, got {}", APPLE_TUN_PACKET_HEADER_LEN, bytes_read)
                 ))
             },
-            Err(e) => if is_would_block(&e) {
+            Err(FailedIo::WouldBlock(_) | FailedIo::NoBufferSpace(_)) => {
                 StreamResult::ok(0, WouldBlock::Yes, PendingWrite::No)
-            } else {
-                StreamResult::Err(e)
             }
+            Err(FailedIo::Fatal(e)) => StreamResult::Err(e),
         }
     }
 
@@ -102,34 +101,24 @@ impl Stream for TunStreamApple {
         self.write_buffer.extend_from_slice(&[0, 0, 0, af]);
         self.write_buffer.extend_from_slice(&data);
 
-        let total_len = self.write_buffer.len();
-        let mut bytes_written = 0;
-
-        while bytes_written < total_len {
-            match self.file.write(&self.write_buffer[bytes_written..]) {
-                Ok(0) => {
-                    return StreamResult::Err(io::Error::new(io::ErrorKind::WriteZero,
-                        "Failed to write packet to TUN device"
-                    ));
-                }
-                Ok(bytes_count) => {
-                    bytes_written += bytes_count;
-                }
-                Err(e) if is_would_block(&e) => {
-                    return if bytes_written >= APPLE_TUN_PACKET_HEADER_LEN {
-                        StreamResult::ok(bytes_written - APPLE_TUN_PACKET_HEADER_LEN, WouldBlock::Yes, PendingWrite::No)
-                    } else {
-                        StreamResult::Err(io::Error::new(
-                            io::ErrorKind::Other,
-                            format!("Partial header write ({} bytes) before would-block", bytes_written)
-                        ))
-                    }
-                }
-                Err(e) => return StreamResult::Err(e)
+        // The kernel takes a packet whole or not at all, so one write is one
+        // packet.
+        match self.file.write(&self.write_buffer).map_err(FailedIo::on_tun) {
+            Ok(written) if written == self.write_buffer.len() => {
+                StreamResult::ok(data.len(), WouldBlock::No, PendingWrite::No)
             }
+            Ok(written) => StreamResult::Err(io::Error::new(
+                io::ErrorKind::WriteZero,
+                format!("TUN device took {written} of {} bytes of a packet", self.write_buffer.len())
+            )),
+            // The kernel took nothing and the device still works, so this is
+            // not an error.
+            Err(FailedIo::WouldBlock(e) | FailedIo::NoBufferSpace(e)) => {
+                log::debug!("TUN write refused ({e}), dropping the packet");
+                StreamResult::ok(0, WouldBlock::Yes, PendingWrite::No)
+            }
+            Err(FailedIo::Fatal(e)) => StreamResult::Err(e),
         }
-
-        StreamResult::ok(data.len(), WouldBlock::No, PendingWrite::No)
     }
 
     fn write_from_buffer(&mut self) -> StreamResult {

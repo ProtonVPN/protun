@@ -53,7 +53,7 @@ use super::test_clocks::{TestMonotonicClock, TestRealtimeClock};
 use crate::api::local_agent::LocalAgentSettings;
 #[cfg(feature = "local-agent")]
 use crate::api::tests::dummy_protocol::DummyLocalAgentScript;
-use crate::connection::time::{MonotonicClock, RealtimeClock};
+use crate::connection::time::{ClientMonotonicFactory, MonotonicClock, RealtimeClock};
 
 pub(crate) struct TestEventCallback {
     sender: mpsc::Sender<Event>,
@@ -230,7 +230,7 @@ pub(crate) fn prepare_connection_test(
     let tun_socket_addr = tun_socket.as_ref().map(|s| s.local_addr().unwrap());
 
     // Launch connection loop
-    let socket_factory = Box::new(SocketFactoryUnix::new(None));
+    let socket_factory = Box::new(SocketFactoryUnix::new(None, ClientMonotonicFactory::new()));
     let (poll, waker) =
         MioStreams::create_mio_poll_with_waker().expect("Failed to create mio poll");
     let connection = Connection::connect_internal(
@@ -299,7 +299,7 @@ pub(crate) fn create_udp_tun_stream(
 ) -> Result<Box<dyn MioStream>, io::Error> {
     let udp = UdpSocket::bind(bind_addr)?;
     udp.connect(connect_to)?;
-    Ok(Box::new(UdpSocketStream::new(udp)?))
+    Ok(Box::new(UdpSocketStream::new(udp, ClientMonotonicFactory::new())?))
 }
 
 pub(crate) fn create_udp_peer(id: u8) -> (std::net::UdpSocket, PeerInfo) {
@@ -390,7 +390,7 @@ pub(crate) fn prepare_local_agent_connection_test(
     };
     let tun_socket_addr = tun_socket.as_ref().map(|s| s.local_addr().unwrap());
 
-    let socket_factory = Box::new(SocketFactoryUnix::new(None));
+    let socket_factory = Box::new(SocketFactoryUnix::new(None, ClientMonotonicFactory::new()));
     let (poll, waker) =
         MioStreams::create_mio_poll_with_waker().expect("Failed to create mio poll");
 

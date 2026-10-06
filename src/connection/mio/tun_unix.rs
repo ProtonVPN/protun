@@ -20,7 +20,7 @@ use std::io::{self, Read, Write};
 use std::os::fd::{FromRawFd, RawFd};
 use mio::event;
 
-use crate::connection::mio::streams::{is_would_block, MioStream};
+use crate::connection::mio::streams::{FailedIo, MioStream};
 use crate::connection::mio::tun_source::TunSourceFd;
 use crate::connection::streams::{PendingWrite, Stream, StreamResult, WouldBlock};
 
@@ -47,7 +47,7 @@ impl Stream for TunStreamUnix {
 
     fn read(&mut self, buf: &mut[u8]) -> StreamResult {
         let ret = self.file.read(buf);
-        match ret {
+        match ret.map_err(FailedIo::on_tun) {
             Ok(bytes_count) => {
                 if bytes_count == 0 {
                     StreamResult::Err(io::Error::new(io::ErrorKind::UnexpectedEof, "tun read: unexpected EOF"))
@@ -55,33 +55,33 @@ impl Stream for TunStreamUnix {
                     StreamResult::ok(bytes_count, WouldBlock::No, PendingWrite::No)
                 }
             }
-            Err(e) => if is_would_block(&e) {
+            Err(FailedIo::WouldBlock(_) | FailedIo::NoBufferSpace(_)) => {
                 StreamResult::ok(0, WouldBlock::Yes, PendingWrite::No)
-            } else {
-                StreamResult::Err(e)
             }
+            Err(FailedIo::Fatal(e)) => StreamResult::Err(e),
         }
     }
 
     fn write(&mut self, data: Vec<u8>) -> StreamResult {
-        let mut bytes_written = 0;
-        while bytes_written < data.len() {
-            let ret = self.file.write(&data[bytes_written..]);
-            match ret {
-                Ok(bytes_count) => {
-                    if bytes_count < data.len() {
-                        log::debug!("tun: partial write");
-                    }
-                    bytes_written += bytes_count;
-                }
-                Err(e) => return if is_would_block(&e) {
-                    StreamResult::ok(bytes_written, WouldBlock::Yes, PendingWrite::No)
-                } else {
-                    StreamResult::Err(e)
-                }
-            }
+        // An empty packet has nothing to write.
+        if data.is_empty() {
+            return StreamResult::ok(0, WouldBlock::No, PendingWrite::No);
         }
-        StreamResult::ok(bytes_written, WouldBlock::No, PendingWrite::No)
+
+        // The kernel only writes whole packets, partial writes are not possible
+        match self.file.write(&data).map_err(FailedIo::on_tun) {
+            Ok(written) if written == data.len() => StreamResult::ok(written, WouldBlock::No, PendingWrite::No),
+            Ok(written) => StreamResult::Err(io::Error::new(
+                io::ErrorKind::WriteZero,
+                format!("TUN device took {written} of {} bytes of a packet", data.len())
+            )),
+            // The kernel wrote nothing and the error is non-fatal.
+            Err(FailedIo::WouldBlock(e) | FailedIo::NoBufferSpace(e)) => {
+                log::debug!("TUN write refused ({e}), dropping the packet");
+                StreamResult::ok(0, WouldBlock::Yes, PendingWrite::No)
+            }
+            Err(FailedIo::Fatal(e)) => StreamResult::Err(e),
+        }
     }
 
     fn write_from_buffer(&mut self) -> StreamResult {

@@ -24,10 +24,11 @@ use socket2::SockRef;
 use crate::connection::mio::socket_factory_unix::SocketFactoryUnix;
 use crate::connection::mio::streams::MioStreams;
 use crate::connection::streams::Streams;
+use crate::connection::time::ClientMonotonicFactory;
 
 fn streams_protected_by(protect_socket: impl Fn(RawFd) -> bool + Send + Sync + 'static) -> MioStreams {
     let (poll, _waker) = MioStreams::create_mio_poll_with_waker().expect("a poll");
-    let socket_factory = SocketFactoryUnix::new(Some(Box::new(protect_socket)));
+    let socket_factory = SocketFactoryUnix::new(Some(Box::new(protect_socket)), ClientMonotonicFactory::new());
     MioStreams::new(None, Box::new(socket_factory), poll).expect("streams without a tun")
 }
 

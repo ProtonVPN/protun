@@ -101,8 +101,11 @@ fn create_pvpn_dependencies(
     event_callback: Box<dyn EventCallback>,
     cache: Box<dyn PersistentCache>,
 ) -> Result<PvpnDependencies, io::Error> {
+    let monotonic_factory = ClientMonotonicFactory::new();
+    let realtime_factory = ClientRealtimeFactory::new();
+
     let socket_factory =
-        Box::new(SocketFactoryUnix::new(socket_protector));
+        Box::new(SocketFactoryUnix::new(socket_protector, monotonic_factory.clone()));
 
     let tun_stream: Option<Box<dyn MioStream>> = if let Some(tun_fd) = tun_fd {
         Some(Box::new(TunStreamUnixType::new(tun_fd)))
@@ -110,11 +113,11 @@ fn create_pvpn_dependencies(
         None
     };
 
+    // FIXME: plumb this error through to the caller
+    // nosemgrep: panic-in-function-returning-result
     let streams = MioStreams::new(tun_stream, socket_factory, poll)
         .expect("Failed to create mio streams");
 
-    let monotonic_factory = ClientMonotonicFactory::new();
-    let realtime_factory = ClientRealtimeFactory::new();
     let pvpn_client = PvpnClientImpl::new(
         monotonic_factory.clone(),
         realtime_factory.clone(),

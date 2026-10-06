@@ -26,14 +26,19 @@ use socket2::{Domain, Protocol, SockAddr, Socket, Type};
 use crate::connection::mio::streams::MioStream;
 use crate::connection::mio::tcp::TcpSocketStream;
 use crate::connection::mio::udp::UdpSocketStream;
+use crate::connection::time::ClientMonotonicFactory;
 use crate::{api::connection_unix::SocketProtector, connection::mio::streams::MioSocketFactory};
 
 pub(crate) struct SocketFactoryUnix {
     socket_protector: Option<Box<dyn SocketProtector>>,
+    monotonic_factory: ClientMonotonicFactory,
 }
 impl SocketFactoryUnix {
-    pub(crate) fn new(socket_protector: Option<Box<dyn SocketProtector>>) -> Self {
-        Self { socket_protector }
+    pub(crate) fn new(
+        socket_protector: Option<Box<dyn SocketProtector>>,
+        monotonic_factory: ClientMonotonicFactory,
+    ) -> Self {
+        Self { socket_protector, monotonic_factory }
     }
 
     /// Asks the host to protect `sock`, which must not be connected yet. A
@@ -95,6 +100,6 @@ impl MioSocketFactory for SocketFactoryUnix {
         sock.set_nonblocking(true)?;
         sock.connect(&SockAddr::from(addr))?;
         let mio_udp = UdpSocket::from_std(std::net::UdpSocket::from(sock));
-        Ok(Box::new(UdpSocketStream::new(mio_udp)?))
+        Ok(Box::new(UdpSocketStream::new(mio_udp, self.monotonic_factory.clone())?))
     }
 }

@@ -21,8 +21,9 @@ use std::net::Shutdown;
 use mio::event;
 use mio::net::TcpStream;
 use pvpnclient::action::SocketOption;
+use pvpnclient::vpn::VpnStreamKind;
 
-use crate::connection::mio::streams::{is_would_block, MioStream};
+use crate::connection::mio::streams::{FailedIo, MioStream};
 use crate::connection::streams::{PendingWrite, Stream, StreamResult, WouldBlock};
 
 pub(crate) struct TcpSocketStream {
@@ -45,7 +46,7 @@ impl Stream for TcpSocketStream {
     fn read(&mut self, buf: &mut [u8]) -> StreamResult {
         let ret = self.sock.read(buf);
         let pending_write = if self.write_buffer.is_empty() { PendingWrite::No } else { PendingWrite::Yes };
-        match ret {
+        match ret.map_err(|e| FailedIo::on_socket(e, VpnStreamKind::Tcp)) {
             Ok(bytes_count) => {
                 if bytes_count == 0 {
                     StreamResult::StreamClosed
@@ -53,11 +54,10 @@ impl Stream for TcpSocketStream {
                     StreamResult::ok(bytes_count, WouldBlock::No, pending_write)
                 }
             },
-            Err(e) => if is_would_block(&e) {
+            Err(FailedIo::WouldBlock(_) | FailedIo::NoBufferSpace(_)) => {
                 StreamResult::ok(0, WouldBlock::Yes, pending_write)
-            } else {
-                StreamResult::Err(e)
             }
+            Err(FailedIo::Fatal(e)) => StreamResult::Err(e),
         }
     }
 
@@ -83,10 +83,13 @@ impl Stream for TcpSocketStream {
                 }
                 Err(e) => {
                     self.write_buffer.push_front(data);
-                    return if is_would_block(&e) {
-                        StreamResult::ok(bytes_written, WouldBlock::Yes, PendingWrite::Yes)
-                    } else {
-                        StreamResult::Err(e)
+                    return match FailedIo::on_socket(e, VpnStreamKind::Tcp) {
+                        // A byte stream cannot drop data, so TCP also waits
+                        // when the kernel had no buffer space.
+                        FailedIo::WouldBlock(_) | FailedIo::NoBufferSpace(_) => {
+                            StreamResult::ok(bytes_written, WouldBlock::Yes, PendingWrite::Yes)
+                        }
+                        FailedIo::Fatal(e) => StreamResult::Err(e),
                     }
                 }
             }

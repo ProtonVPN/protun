@@ -20,6 +20,7 @@ use crate::connection::{streams::{extract_socket_stream_ids, PollResult, PollWak
 use crate::connection::mio::poll_timer::SuspendInclusivePollTimer;
 use mio::{event, Events, Poll, Token, Waker};
 use pvpnclient::{Deadline, StreamId};
+use pvpnclient::vpn::VpnStreamKind;
 use crate::api::connection::TunStreamInfo;
 use crate::api::state::{InterfaceError, InterfaceState};
 
@@ -234,6 +235,59 @@ impl PollWaker for MioPollWaker {
     }
 }
 
-pub(crate) fn is_would_block(err: &io::Error) -> bool {
-    err.kind() == io::ErrorKind::WouldBlock || err.raw_os_error() == Some(libc::ENOBUFS)
+/// What the kernel said when it failed a read or a write on a stream. Each
+/// stream decides what to do in each case.
+///
+/// A stream builds one with [Self::on_socket] or [Self::on_tun]. There is no
+/// `From<io::Error>`, so that `?` cannot skip the rule for a kind of socket.
+#[derive(Debug)]
+pub(crate) enum FailedIo {
+    /// The kernel cannot do it right now, and will report the stream readable
+    /// or writable when it is ready to try again.
+    WouldBlock(io::Error),
+    /// The kernel had no buffer space to accommodate the request.
+    NoBufferSpace(io::Error),
+    /// Any other error. The stream is no longer usable.
+    Fatal(io::Error),
+}
+
+impl FailedIo {
+    /// Classifies an error from a socket of `kind`.
+    pub(crate) fn on_socket(e: io::Error, kind: VpnStreamKind) -> Self {
+        // Whether the kernel reports the socket writable again after ENOBUFS.
+        let enobufs_is_flow_control = match kind {
+            // xnu returns ENOBUFS when the interface flow controls the socket.
+            // It drops the datagram, and reports the socket writable once the
+            // interface lifts the flow control.
+            //
+            // Linux only returns ENOBUFS when it has no memory for the
+            // datagram, and does not communicate a full queue for the interface
+            // unless IP_RECVERR is set.
+            VpnStreamKind::Udp => cfg!(target_vendor = "apple"),
+            // A TCP socket that has to wait reports EAGAIN. ENOBUFS does not
+            // imply flow control.
+            VpnStreamKind::Tcp => false,
+        };
+        Self::new(e, enobufs_is_flow_control)
+    }
+
+    /// Classifies an error from the TUN device.
+    pub(crate) fn on_tun(e: io::Error) -> Self {
+        match e.raw_os_error() {
+            // xnu's utun returns ENOSPC while more than
+            // `net.utun.max_pending_input` packets, 512 by default, wait for
+            // the network stack.
+            Some(libc::ENOSPC) if cfg!(target_vendor = "apple") => Self::NoBufferSpace(e),
+            _ => Self::new(e, false),
+        }
+    }
+
+    fn new(e: io::Error, enobufs_is_flow_control: bool) -> Self {
+        match (e.kind(), e.raw_os_error()) {
+            (io::ErrorKind::WouldBlock, _) => Self::WouldBlock(e),
+            (_, Some(libc::ENOBUFS)) if enobufs_is_flow_control => Self::WouldBlock(e),
+            (_, Some(libc::ENOBUFS)) => Self::NoBufferSpace(e),
+            _ => Self::Fatal(e),
+        }
+    }
 }

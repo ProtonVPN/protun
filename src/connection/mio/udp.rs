@@ -17,17 +17,22 @@
 
 use std::io;
 use mio::{event, net::UdpSocket};
+use pvpnclient::vpn::VpnStreamKind;
 use crate::connection::{mio::streams::MioStream, streams::{PendingWrite, Stream, StreamResult, WouldBlock}};
-use crate::connection::mio::streams::is_would_block;
+use crate::connection::mio::streams::FailedIo;
+use crate::connection::mio::unsent_datagrams::UnsentDatagrams;
+use crate::connection::time::ClientMonotonicFactory;
 
 pub(crate) struct UdpSocketStream {
     sock: UdpSocket,
+    unsent: UnsentDatagrams,
+    monotonic_factory: ClientMonotonicFactory,
 }
 impl UdpSocketStream {
-    pub fn new(sock: UdpSocket) -> io::Result<UdpSocketStream> {
+    pub fn new(sock: UdpSocket, monotonic_factory: ClientMonotonicFactory) -> io::Result<UdpSocketStream> {
         let local_addr = sock.local_addr()?;
         log::info!("UDP local_addr: {:?}", local_addr);
-        Ok(UdpSocketStream { sock })
+        Ok(UdpSocketStream { sock, unsent: UnsentDatagrams::default(), monotonic_factory })
     }
 }
 impl MioStream for UdpSocketStream {
@@ -35,41 +40,42 @@ impl MioStream for UdpSocketStream {
         &mut self.sock
     }
 }
+
+/// Sends one UDP datagram.
+fn send_datagram(sock: &UdpSocket, datagram: &[u8]) -> Result<usize, FailedIo> {
+    let size = sock.send(datagram).map_err(|e| FailedIo::on_socket(e, VpnStreamKind::Udp))?;
+    if size < datagram.len() {
+        log::debug!("UDP send truncated: {} < {}", size, datagram.len());
+    }
+    Ok(size)
+}
+
 impl Stream for UdpSocketStream {
 
     fn read(&mut self, buf: &mut [u8]) -> StreamResult {
         let ret = self.sock.recv(buf);
-        match ret {
+        let pending_write: PendingWrite = (!self.unsent.is_empty()).into();
+        match ret.map_err(|e| FailedIo::on_socket(e, VpnStreamKind::Udp)) {
             Ok(bytes_count) => {
-                StreamResult::ok(bytes_count, WouldBlock::No, PendingWrite::No)
+                StreamResult::ok(bytes_count, WouldBlock::No, pending_write)
             }
-            Err(e) => if is_would_block(&e) {
-                StreamResult::ok(0, WouldBlock::Yes, PendingWrite::No)
-            } else {
-                StreamResult::Err(e)
+            Err(FailedIo::WouldBlock(_) | FailedIo::NoBufferSpace(_)) => {
+                StreamResult::ok(0, WouldBlock::Yes, pending_write)
             }
+            Err(FailedIo::Fatal(e)) => StreamResult::Err(e),
         }
     }
 
     fn write(&mut self, data: Vec<u8>) -> StreamResult {
-        let ret = self.sock.send(&data);
-        match ret {
-            Ok(size) => {
-                if size < data.len() {
-                    log::debug!("UDP send truncated: {} < {}", size, data.len());
-                }
-                StreamResult::ok(size, WouldBlock::No, PendingWrite::No)
-            }
-            Err(e) => if is_would_block(&e) {
-                StreamResult::ok(0, WouldBlock::Yes, PendingWrite::No)
-            } else {
-                StreamResult::Err(e)
-            }
-        }
+        self.unsent.send(
+            data,
+            || self.monotonic_factory.duration_since_initial(),
+            |datagram| send_datagram(&self.sock, datagram),
+        )
     }
 
     fn write_from_buffer(&mut self) -> StreamResult {
-        // no write buffer for UDP
-        StreamResult::ok(0, WouldBlock::No, PendingWrite::No)
+        let now = self.monotonic_factory.duration_since_initial();
+        self.unsent.send_all(now, |datagram| send_datagram(&self.sock, datagram))
     }
 }

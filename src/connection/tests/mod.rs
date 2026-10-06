@@ -22,4 +22,8 @@ mod poll_timer_tests;
 #[cfg(feature = "unix")]
 mod socket_protector_tests;
 mod time_tests;
+#[cfg(feature = "unix")]
+mod tun_stream_tests;
+#[cfg(feature = "mio")]
+mod unsent_datagrams_tests;
 mod util_tests;
